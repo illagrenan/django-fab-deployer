@@ -1,37 +1,53 @@
-# Fab deploy #
+# Fab Django deploy #
 
-[![Travis CI Badge](https://api.travis-ci.org/illagrenan/color-printer.png)](https://travis-ci.org/illagrenan/color-printer)
-&nbsp;
-[![Coverage Status](https://coveralls.io/repos/illagrenan/color-printer/badge.svg?branch=master)](https://coveralls.io/r/illagrenan/color-printer?branch=master)
-&nbsp;
-[![Requirements Status](https://requires.io/github/illagrenan/color-printer/requirements.svg?branch=master)](https://requires.io/github/illagrenan/color-printer/requirements/?branch=master)
+[![Requirements Status](https://requires.io/github/illagrenan/fab-django-deploy/requirements.svg?branch=master)](https://requires.io/github/illagrenan/color-printer/requirements/?branch=master)
 
 ## Installation ##
 
 **This package is not yet on PyPI.**
 
 ```bash
-pip install --upgrade git+git://github.com/illagrenan/color-printer.git#egg=color-printer
+pip install --upgrade git+git://github.com/illagrenan/fab-django-deploy.git#egg=fab-django-deploy
 ```
 
 ## Usage ##
 
 ```bash
-from color_printer import colors
+# Generate example deployment configuration:
+fdep write_example_config
+```
 
-# Print black
-colors.black("Foo bar")
+Command above will generate `example.json` file in current directory. Example of deployment configuration:
 
-# Print red
-colors.red("Foo bar")
+```json
+{
+  "dev": {
+    "celery_enabled": true, 
+    "deploy_path": "/var/www/dev_my_project", 
+    "hosts": "8.8.8.8", 
+    "key_filename": "~/.ssh/id_rsa.PUB", 
+    "project_name": "dev_my_project", 
+    "user": "dev_my_project", 
+    "venv_path": "data/.venv/bin/activate", 
+    "warn_on_deploy": false
+  }, 
+  "production": {
+    "celery_enabled": true, 
+    "deploy_path": "/var/www/prod_my_project", 
+    "hosts": "8.8.8.8", 
+    "key_filename": "~/.ssh/id_rsa.PUB", 
+    "project_name": "prod_my_project", 
+    "user": "prod_my_project", 
+    "venv_path": "data/.venv/bin/activate", 
+    "warn_on_deploy": true
+  }
+}
+```
 
-# Print green
-colors.green("Foo bar")
+Save this file as `deploy.json` and run:
 
-# ...
-colors.yellow("Foo bar")
-colors.blue("Foo bar")
-colors.magenta("Foo bar")
-colors.cyan("Foo bar")
-colors.white("Foo bar")
+```bash
+fdep dev deploy
+# Or
+fdep production deploy
 ```
