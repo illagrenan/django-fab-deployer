@@ -1,6 +1,6 @@
 # Fab Django deploy #
 
-[![Requirements Status](https://requires.io/github/illagrenan/fab-django-deploy/requirements.svg?branch=master)](https://requires.io/github/illagrenan/color-printer/requirements/?branch=master)
+[![Requirements Status](https://requires.io/github/illagrenan/fab-django-deploy/requirements.svg?branch=master)](https://requires.io/github/illagrenan/fab-django-deploy/requirements/?branch=master)
 
 ## Installation ##
 
