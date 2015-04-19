@@ -1,0 +1,8 @@
+# http://nedbatchelder.com/code/coverage/config.html
+
+[report]
+include = fab_django_deploy/*
+
+exclude_lines =
+    # Don't complain if non-runnable code isn't run:
+    if __name__ == "__main__":
