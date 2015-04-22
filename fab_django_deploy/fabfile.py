@@ -70,11 +70,8 @@ def deploy(*args, **kwargs):
     with cd(env.deploy_path):
         # Source code
         colors.blue("Pulling from git")
+        run('git reset --hard')
         run('git pull --no-edit')
-
-        # Settings
-        colors.blue("Copying settings")
-        run('cp -fr src/main/settings/dist/production.py src/main/settings/local.py')
 
         # Dependencies
         colors.blue("Installing bower dependencies")
@@ -98,9 +95,9 @@ def deploy(*args, **kwargs):
         venv_run('python src/manage.py clean_pyc')
         venv_run('python src/manage.py compile_pyc')
 
-        # Restart process
-        colors.blue("Restarting supervisor")
-        run('supervisorctl restart {0}'.format(env.project_name))
+        # Restart processes
+        colors.blue("Restarting Gunicorn")
+        run('supervisorctl restart {0}_gunicorn'.format(env.project_name))
 
         if env.celery_enabled:
             run('supervisorctl restart {0}_celeryd'.format(env.project_name))
