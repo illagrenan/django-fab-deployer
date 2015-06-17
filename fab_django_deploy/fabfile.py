@@ -31,6 +31,7 @@ def function_builder(target, options):
         env.user = options["user"]
         env.hosts = [options["hosts"]]
         env.deploy_path = options["deploy_path"]
+        env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
         env.celery_enabled = options["celery_enabled"]
 
