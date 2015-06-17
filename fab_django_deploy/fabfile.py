@@ -85,7 +85,7 @@ def deploy(*args, **kwargs):
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel')
 
         # Django tasks
-        colors.blue("Runnying Django commands")
+        colors.blue("Running Django commands")
         venv_run('python src/manage.py collectstatic --noinput')
         venv_run('python src/manage.py migrate')
         venv_run('python src/manage.py compress')
