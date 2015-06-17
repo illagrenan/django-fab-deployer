@@ -32,7 +32,7 @@ setup(
     packages=['fab_django_deploy'],
 
 
-    install_requires=['fabric', 'color_printer'],
+    install_requires=['fabric', 'color_printer', 'paramiko==1.15.1'],
     dependency_links=[
         'git+git://github.com/illagrenan/fab-django-deploy.git#egg=fab-django-deploy',
     ],
