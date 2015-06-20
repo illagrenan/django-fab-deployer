@@ -1,5 +1,4 @@
 include *.md
 include *.rst
-include _generated/*.rst
 include README.md LICENSE
 recursive-include docs *.md

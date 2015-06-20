@@ -1,7 +1,7 @@
 # http://nedbatchelder.com/code/coverage/config.html
 
 [report]
-include = fab_django_deploy/*
+include = django-fab-deployer/*
 
 exclude_lines =
     # Don't complain if non-runnable code isn't run:

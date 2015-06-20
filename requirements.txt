@@ -10,3 +10,7 @@ wsgiref
 colorama
 future
 six
+setuptools
+twine
+docutils
+pygments

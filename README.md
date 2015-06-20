@@ -1,20 +1,18 @@
-# Fab Django deploy #
+# Django FAB Deployer #
 
-[![Requirements Status](https://requires.io/github/illagrenan/fab-django-deploy/requirements.svg?branch=master)](https://requires.io/github/illagrenan/fab-django-deploy/requirements/?branch=master)
+[![Requirements Status](https://requires.io/github/illagrenan/django-fab-deployer/requirements.svg?branch=master)](https://requires.io/github/illagrenan/django-fab-deployer/requirements/?branch=master)
 
 ## Installation ##
 
-**This package is not yet on PyPI.**
-
 ```bash
-pip install --upgrade git+git://github.com/illagrenan/fab-django-deploy.git#egg=fab-django-deploy
+pip install --upgrade django_fab_deployer
 ```
 
 ## Usage ##
 
 ```bash
 # Generate example deployment configuration:
-fdep write_example_config
+djdeploy write_example_config
 ```
 
 Command above will generate `example.json` file in current directory. Example of deployment configuration:
@@ -47,7 +45,7 @@ Command above will generate `example.json` file in current directory. Example of
 Save this file as `deploy.json` and run:
 
 ```bash
-fdep dev deploy
+djdeploy dev deploy
 # Or
-fdep production deploy
+djdeploy production deploy
 ```

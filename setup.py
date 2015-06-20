@@ -2,25 +2,28 @@
 
 from setuptools import setup
 
+try:
+    from pypandoc import convert
+
+    def read_md(file_name):
+        # http://stackoverflow.com/a/23265673/752142
+        return convert(file_name, 'rst')
+except ImportError:
+    print("warning: pypandoc module not found, could not convert Markdown to RST")
+
+    def read_md(file_name):
+        try:
+            return open(file_name, 'r').read()
+        except UnicodeDecodeError:
+            return "Encoding problems with README.md"
+
 # https://hynek.me/articles/sharing-your-labor-of-love-pypi-quick-and-dirty/
 setup(
-    name='fab_django_deploy',
-    version='0.0.1',
+    name='django_fab_deployer',
+    version='0.0.2',
     description='TODO Add description',
-
-    # ########################################################################
-    #
-    # README.rst is generated from README.md:
-    #
-    # $ pandoc --from=markdown --to=rst README.md -o .tmp/README.rst
-    #
-    # ~ OR ~
-    #
-    # $ fab build
-    # ########################################################################
-    long_description=(open('_generated/README.rst').read()),
-
-    url='https://github.com/illagrenan/fab-django-deploy',
+    long_description=read_md('README.md'),
+    url='https://github.com/illagrenan/django-fab-deployer',
     license='MIT',
     author='Vašek Dohnal',
     author_email='vaclav.dohnal@gmail.com',
@@ -29,23 +32,20 @@ setup(
     # installed (it’s still part of the source distribution)
     # since that would wreak havoc.
     # find_packages(exclude=['tests*'])
-    packages=['fab_django_deploy'],
+    packages=['django_fab_deployer'],
 
-
-    install_requires=['fabric', 'color_printer'],
+    install_requires=['fabric', 'color-printer'],
     dependency_links=[
-        'git+git://github.com/illagrenan/fab-django-deploy.git#egg=fab-django-deploy',
+        'git+git://github.com/illagrenan/color-printer.git#egg=color-printer',
     ],
     entry_points={
         'console_scripts': [
-            'fdep=fab_django_deploy.runner:main'
+            'djdeploy=django_fab_deployer.runner:main'
         ],
     },
     include_package_data=True,
     classifiers=[
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
         'License :: OSI Approved :: MIT License',
         'Development Status :: 3 - Alpha',
         'Environment :: Web Environment',
