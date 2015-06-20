@@ -15,8 +15,7 @@ from fabric.operations import os, run
 from fabric.utils import abort
 from color_printer import colors
 
-from fab_django_deploy.exceptions import InvalidConfiguration, MissingConfiguration
-
+from django_fab_deployer.exceptions import InvalidConfiguration, MissingConfiguration
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 

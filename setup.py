@@ -20,7 +20,7 @@ except ImportError:
 # https://hynek.me/articles/sharing-your-labor-of-love-pypi-quick-and-dirty/
 setup(
     name='django_fab_deployer',
-    version='0.0.2',
+    version='0.0.4',
     description='TODO Add description',
     long_description=read_md('README.md'),
     url='https://github.com/illagrenan/django-fab-deployer',
@@ -34,7 +34,7 @@ setup(
     # find_packages(exclude=['tests*'])
     packages=['django_fab_deployer'],
 
-    install_requires=['fabric', 'color-printer'],
+    install_requires=['fabric', 'color-printer', 'paramiko==1.15.1'],
     dependency_links=[
         'git+git://github.com/illagrenan/color-printer.git#egg=color-printer',
     ],
