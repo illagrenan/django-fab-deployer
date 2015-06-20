@@ -31,6 +31,7 @@ def function_builder(target, options):
         env.user = options["user"]
         env.hosts = [options["hosts"]]
         env.deploy_path = options["deploy_path"]
+        env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
         env.celery_enabled = options["celery_enabled"]
 
@@ -85,7 +86,7 @@ def deploy(*args, **kwargs):
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel')
 
         # Django tasks
-        colors.blue("Runnying Django commands")
+        colors.blue("Running Django commands")
         venv_run('python src/manage.py collectstatic --noinput')
         venv_run('python src/manage.py migrate')
         venv_run('python src/manage.py compress')
@@ -103,4 +104,5 @@ def deploy(*args, **kwargs):
             run('supervisorctl restart {0}_celeryd'.format(env.project_name))
             run('supervisorctl restart {0}_celerybeat'.format(env.project_name))
 
+        run('supervisorctl status | grep "{0}"'.format(env.project_name))
         colors.green("Done.")
