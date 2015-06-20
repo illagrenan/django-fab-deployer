@@ -104,4 +104,5 @@ def deploy(*args, **kwargs):
             run('supervisorctl restart {0}_celeryd'.format(env.project_name))
             run('supervisorctl restart {0}_celerybeat'.format(env.project_name))
 
+        run('supervisorctl status | grep "{0}"'.format(env.project_name))
         colors.green("Done.")
