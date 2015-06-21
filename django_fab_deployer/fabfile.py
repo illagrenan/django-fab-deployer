@@ -78,7 +78,7 @@ def deploy(*args, **kwargs):
 
         with settings(warn_only=True):
             # Bower may not be installed
-            if run('bower install --config.interactive=false') != 0:
+            if run('bower update --config.interactive=false') != 0:
                 colors.yellow("Please check if bower is installed.")
 
         colors.blue("Installing pip dependencies")
@@ -97,11 +97,36 @@ def deploy(*args, **kwargs):
 
         # Restart processes
         colors.blue("Restarting Gunicorn")
-        run('supervisorctl restart {0}_gunicorn'.format(env.project_name))
+
+        run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
 
         if env.celery_enabled:
-            run('supervisorctl restart {0}_celeryd'.format(env.project_name))
-            run('supervisorctl restart {0}_celerybeat'.format(env.project_name))
+            colors.blue("Restarting Celery")
+
+            run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
+            run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
 
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
+
         colors.green("Done.")
+
+@task
+def update_python_tools(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Updating Python tools")
+
+        venv_run('easy_install --upgrade pip')
+        venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel')
+
+        colors.green("Done.")
+
+@task
+def restart(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Restarting all processes in group")
+
+        run('supervisorctl restart {0}:*'.format(env.project_name))
+        run('supervisorctl status | grep "{0}"'.format(env.project_name))
+
+        colors.green("Done.")
+
