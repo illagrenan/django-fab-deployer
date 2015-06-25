@@ -45,7 +45,7 @@ Command above will generate `example.json` file in current directory. Example of
 Save this file as `deploy.json` and run:
 
 ```bash
-djdeploy dev deploy
+djdeploy dev deploy # To upgrade pip requirements: djdeploy dev deploy:upgrade=True
 # Or
 djdeploy production deploy
 ```

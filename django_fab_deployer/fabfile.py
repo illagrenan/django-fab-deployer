@@ -11,7 +11,7 @@ from fabric.api import env
 from fabric.context_managers import cd, settings
 from fabric.contrib.console import confirm
 from fabric.decorators import task
-from fabric.operations import os, run
+from fabric.operations import os, run, local
 from fabric.utils import abort
 from color_printer import colors
 
@@ -66,7 +66,11 @@ def venv_run(command_to_run):
 
 
 @task
-def deploy(*args, **kwargs):
+def deploy(upgrade=False, *args, **kwargs):
+
+    local("python src/manage.py validate_templates")
+    local("python src/manage.py check")
+
     with cd(env.deploy_path):
         # Source code
         colors.blue("Pulling from git")
@@ -78,22 +82,23 @@ def deploy(*args, **kwargs):
 
         with settings(warn_only=True):
             # Bower may not be installed
-            if run('bower update --config.interactive=false') != 0:
-                colors.yellow("Please check if bower is installed.")
+            run('bower update --config.interactive=false')
 
         colors.blue("Installing pip dependencies")
-        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel')
+        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
+        '--upgrade' if upgrade else ''))
 
         # Django tasks
         colors.blue("Running Django commands")
         venv_run('python src/manage.py collectstatic --noinput')
         venv_run('python src/manage.py migrate')
         venv_run('python src/manage.py compress')
+        venv_run('python src/manage.py compress')
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
         venv_run('python src/manage.py clean_pyc')
-        venv_run('python src/manage.py compile_pyc')
+        venv_run('python src/manage.py compilemessages')
 
         # Restart processes
         colors.blue("Restarting Gunicorn")
@@ -110,6 +115,7 @@ def deploy(*args, **kwargs):
 
         colors.green("Done.")
 
+
 @task
 def update_python_tools(*args, **kwargs):
     with cd(env.deploy_path):
@@ -120,6 +126,7 @@ def update_python_tools(*args, **kwargs):
 
         colors.green("Done.")
 
+
 @task
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
@@ -129,4 +136,3 @@ def restart(*args, **kwargs):
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
 
         colors.green("Done.")
-
