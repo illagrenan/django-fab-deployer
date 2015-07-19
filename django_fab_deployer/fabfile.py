@@ -75,14 +75,14 @@ def deploy(upgrade=False, *args, **kwargs):
         # Source code
         colors.blue("Pulling from git")
         run('git reset --hard')
-        run('git pull --no-edit')
+        run('git pull origin master --no-edit')
 
         # Dependencies
         colors.blue("Installing bower dependencies")
 
         with settings(warn_only=True):
             # Bower may not be installed
-            run('bower update --config.interactive=false')
+            run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
 
         colors.blue("Installing pip dependencies")
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
