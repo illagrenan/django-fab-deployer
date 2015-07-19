@@ -80,8 +80,8 @@ def deploy(upgrade=False, *args, **kwargs):
         # Dependencies
         colors.blue("Installing bower dependencies")
 
-        with settings(warn_only=True):
-            # Bower may not be installed
+        with settings(warn_only=True): # Bower may not be installed
+            run('bower prune') # Uninstalls local extraneous packages.
             run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
 
         colors.blue("Installing pip dependencies")
