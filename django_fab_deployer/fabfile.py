@@ -75,7 +75,7 @@ def deploy(upgrade=False, *args, **kwargs):
         # Source code
         colors.blue("Pulling from git")
         run('git reset --hard')
-        run('git pull origin master --no-edit')
+        run('git pull --no-edit origin master')
 
         # Dependencies
         colors.blue("Installing bower dependencies")
