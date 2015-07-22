@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 
 import os
 import json
+from time import gmtime, strftime
 
 from fabric.api import env
 from fabric.context_managers import cd, settings
@@ -67,11 +68,13 @@ def venv_run(command_to_run):
 
 @task
 def deploy(upgrade=False, *args, **kwargs):
-
     local("python src/manage.py validate_templates")
     local("python src/manage.py check")
 
     with cd(env.deploy_path):
+        # Create backup
+        backup()
+
         # Source code
         colors.blue("Pulling from git")
         run('git reset --hard')
@@ -80,13 +83,13 @@ def deploy(upgrade=False, *args, **kwargs):
         # Dependencies
         colors.blue("Installing bower dependencies")
 
-        with settings(warn_only=True): # Bower may not be installed
-            run('bower prune') # Uninstalls local extraneous packages.
+        with settings(warn_only=True):  # Bower may not be installed
+            run('bower prune')  # Uninstalls local extraneous packages.
             run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
 
         colors.blue("Installing pip dependencies")
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
-        '--upgrade' if upgrade else ''))
+            '--upgrade' if upgrade else ''))
 
         # Django tasks
         colors.blue("Running Django commands")
@@ -111,6 +114,20 @@ def deploy(upgrade=False, *args, **kwargs):
             run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
 
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
+
+        colors.green("Done.")
+
+
+@task
+def backup(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Creating backup")
+
+        run("mkdir -p data/deployment_backup")
+
+        now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
+        venv_run(
+            "python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
 
         colors.green("Done.")
 

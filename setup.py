@@ -20,7 +20,7 @@ except ImportError:
 # https://hynek.me/articles/sharing-your-labor-of-love-pypi-quick-and-dirty/
 setup(
     name='django_fab_deployer',
-    version='0.0.9',
+    version='0.0.11',
     description='TODO Add description',
     long_description=read_md('README.md'),
     url='https://github.com/illagrenan/django-fab-deployer',
