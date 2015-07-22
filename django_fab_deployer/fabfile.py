@@ -93,7 +93,6 @@ def deploy(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py collectstatic --noinput')
         venv_run('python src/manage.py migrate')
         venv_run('python src/manage.py compress')
-        venv_run('python src/manage.py compress')
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
