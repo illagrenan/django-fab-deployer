@@ -8,7 +8,7 @@
 pip install --upgrade django_fab_deployer
 ```
 
-## Usage ##
+## Installation ##
 
 ```bash
 # Generate example deployment configuration:
@@ -42,10 +42,21 @@ Command above will generate `example.json` file in current directory. Example of
 }
 ```
 
-Save this file as `deploy.json` and run:
+Save this file as `deploy.json`.
+
+## Usage  ##
+
+In project's root run:
+
 
 ```bash
-djdeploy dev deploy # To upgrade pip requirements: djdeploy dev deploy:upgrade=True
-# Or
-djdeploy production deploy
+djdeploy <TARGET> deploy
+```
+
+where `<TARGET>` is `production`, `dev`, `foo` or `bar`.
+
+Optionally you can deploy&amp;update dependencies:
+
+```bash
+djdeploy <TARGET> deploy:upgrade=True
 ```
