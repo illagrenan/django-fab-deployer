@@ -34,6 +34,7 @@ def function_builder(target, options):
         env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
         env.celery_enabled = options["celery_enabled"]
+        env.use_ssh_config = True
 
         if "key_filename" in options:
             env.key_filename = os.path.normpath(options["key_filename"])
