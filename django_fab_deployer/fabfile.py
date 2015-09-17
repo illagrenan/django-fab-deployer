@@ -63,10 +63,11 @@ def _prepare_hosts():
 
     try:
         deployment_data = json.loads(data)
-    except ValueError:
-        raise InvalidConfiguration()
+    except ValueError as e:
+        raise InvalidConfiguration(e.message)
 
     for target, options in deployment_data.items():
+        yield target, task(name=target)(function_builder(target, options))
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
