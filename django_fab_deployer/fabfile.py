@@ -4,6 +4,14 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
 
+__all__ = [
+    'venv_run',
+    'deploy',
+    'backup',
+    'update_python_tools',
+    'restart'
+]
+
 import os
 import json
 from time import gmtime, strftime
@@ -16,9 +24,10 @@ from fabric.operations import os, run, local
 from fabric.utils import abort
 from color_printer import colors
 
-from django_fab_deployer.exceptions import InvalidConfiguration, MissingConfiguration
+from .exceptions import InvalidConfiguration, MissingConfiguration
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
+DEFAULT_SOURCE_BRANCH = "master"
 
 
 def function_builder(target, options):
@@ -35,6 +44,7 @@ def function_builder(target, options):
         env.venv_path = options["venv_path"]
         env.celery_enabled = options["celery_enabled"]
         env.use_ssh_config = True
+        env.source_branch = options.get('source_branch', DEFAULT_SOURCE_BRANCH)
 
         if "key_filename" in options:
             env.key_filename = os.path.normpath(options["key_filename"])
@@ -57,6 +67,7 @@ def _prepare_hosts():
         raise InvalidConfiguration()
 
     for target, options in deployment_data.items():
+        __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
 
@@ -79,7 +90,7 @@ def deploy(upgrade=False, *args, **kwargs):
         # Source code
         colors.blue("Pulling from git")
         run('git reset --hard')
-        run('git pull --no-edit origin master')
+        run('git pull --no-edit origin {0}'.format(env.source_branch))
 
         # Dependencies
         colors.blue("Installing bower dependencies")
@@ -105,7 +116,7 @@ def deploy(upgrade=False, *args, **kwargs):
 
         # Restart processes
         colors.blue("Restarting Gunicorn")
-
+        colors.blue("Restarting Gunicorn")
         run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
 
         if env.celery_enabled:
