@@ -52,7 +52,7 @@ def function_builder(target, options):
     return function
 
 
-def _prepare_hosts():
+def get_tasks():
     try:
         with open(os.path.join(os.getcwd(), DEPLOYMENT_CONFIG_FILE), "r") as deploy_config_file:
             data = deploy_config_file.read()
@@ -71,8 +71,11 @@ def _prepare_hosts():
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
+    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status]:
+        yield fabric_task.__name__, fabric_task
 
-_prepare_hosts()
+
+get_tasks()
 
 
 def venv_run(command_to_run):
@@ -91,6 +94,7 @@ def deploy(upgrade=False, *args, **kwargs):
         # Source code
         colors.blue("Pulling from git")
         run('git reset --hard')
+        run('git checkout {0}'.format(env.source_branch))
         run('git pull --no-edit origin {0}'.format(env.source_branch))
 
         # Dependencies
@@ -115,18 +119,8 @@ def deploy(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py clean_pyc')
         venv_run('python src/manage.py compilemessages')
 
-        # Restart processes
-        colors.blue("Restarting Gunicorn")
-        colors.blue("Restarting Gunicorn")
-        run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
-
-        if env.celery_enabled:
-            colors.blue("Restarting Celery")
-
-            run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
-            run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
-
-        run('supervisorctl status | grep "{0}"'.format(env.project_name))
+        restart()
+        status()
 
         colors.green("Done.")
 
@@ -159,9 +153,22 @@ def update_python_tools(*args, **kwargs):
 @task
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Restarting all processes in group")
+        colors.blue("Restarting Gunicorn")
+        run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
 
-        run('supervisorctl restart {0}:*'.format(env.project_name))
+        if env.celery_enabled:
+            colors.blue("Restarting Celery")
+
+            run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
+            run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
+
+        colors.green("Done.")
+
+
+@task
+def status(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Retrieving status")
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
 
         colors.green("Done.")
