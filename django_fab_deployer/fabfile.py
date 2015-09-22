@@ -49,6 +49,11 @@ def function_builder(target, options):
         if "key_filename" in options:
             env.key_filename = os.path.normpath(options["key_filename"])
 
+        colors.yellow("####################################################################### ")
+        colors.yellow("# {0}".format(env.project_name))
+        colors.yellow("# User={0}, Host(s)={1}, Target={2}".format(env.user, env.hosts, target))
+        colors.yellow("####################################################################### ")
+
     return function
 
 
@@ -71,7 +76,7 @@ def get_tasks():
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
-    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status]:
+    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check]:
         yield fabric_task.__name__, fabric_task
 
 
@@ -84,8 +89,14 @@ def venv_run(command_to_run):
 
 @task
 def deploy(upgrade=False, *args, **kwargs):
-    local("python src/manage.py validate_templates")
-    local("python src/manage.py check")
+    colors.yellow("+----------------------+")
+    colors.yellow("|  Deployment started  |")
+    colors.yellow("+----------------------+")
+
+    if isinstance(upgrade, basestring):
+        upgrade = upgrade.lower() == 'true'
+
+    check()
 
     with cd(env.deploy_path):
         # Create backup
@@ -106,7 +117,7 @@ def deploy(upgrade=False, *args, **kwargs):
 
         colors.blue("Installing pip dependencies")
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
-            '--upgrade' if upgrade else ''))
+            '--upgrade' if upgrade  else ''))
 
         # Django tasks
         colors.blue("Running Django commands")
@@ -151,6 +162,19 @@ def update_python_tools(*args, **kwargs):
 
 
 @task
+def check(*args, **kwargs):
+    colors.blue("Checking local project")
+
+    with settings(warn_only=True):
+        local("git status --porcelain")
+
+    local("python src/manage.py check")
+    local("python src/manage.py validate_templates")
+
+    colors.green("Done.")
+
+
+@task
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Restarting Gunicorn")
@@ -169,6 +193,9 @@ def restart(*args, **kwargs):
 def status(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Retrieving status")
+
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
+        run('service nginx status')
+        run('service mysql status')
 
         colors.green("Done.")
