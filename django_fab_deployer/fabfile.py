@@ -37,6 +37,15 @@ DEFAULT_SOURCE_BRANCH = "master"
 Windows.enable(auto_colors=True, reset_atexit=True)  # Does nothing if not on Windows.
 
 
+def _print_table(table):
+    try:
+        print(table.table)
+    except UnicodeEncodeError:
+        import pprint
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(table.table_data)
+
+
 def _print_deployment_summary(env):
     table_data = [
         ["Project name:", env.project_name],
@@ -51,11 +60,12 @@ def _print_deployment_summary(env):
     table.inner_row_border = False
     table.inner_heading_row_border = False
 
-    print(table.table)
+    _print_table(table)
 
 
 def _print_simple_table(s):
-    print(SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]]).table)
+    table = SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]])
+    _print_table(table)
 
 
 def function_builder(target, options):
