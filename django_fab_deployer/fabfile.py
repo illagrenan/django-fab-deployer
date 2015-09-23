@@ -10,7 +10,7 @@ import json
 from time import gmtime, strftime
 import time
 
-from colorclass import Color
+from colorclass import Color, Windows
 import requests
 from fabric.api import env
 from fabric.context_managers import cd, settings
@@ -33,6 +33,8 @@ __all__ = [
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 DEFAULT_SOURCE_BRANCH = "master"
+
+Windows.enable(auto_colors=True, reset_atexit=True)  # Does nothing if not on Windows.
 
 
 def _print_deployment_summary(env):
