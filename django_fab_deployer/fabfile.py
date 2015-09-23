@@ -4,6 +4,25 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
 
+import logging
+import os
+import json
+from time import gmtime, strftime
+import time
+
+from colorclass import Color
+import requests
+from fabric.api import env
+from fabric.context_managers import cd, settings
+from fabric.contrib.console import confirm
+from fabric.decorators import task
+from fabric.operations import os, run, local
+from fabric.utils import abort
+from color_printer import colors
+from terminaltables import SingleTable
+
+from .exceptions import InvalidConfiguration, MissingConfiguration
+
 __all__ = [
     'venv_run',
     'deploy',
@@ -12,33 +31,37 @@ __all__ = [
     'restart'
 ]
 
-import os
-import json
-from time import gmtime, strftime
-
-from fabric.api import env
-from fabric.context_managers import cd, settings
-from fabric.contrib.console import confirm
-from fabric.decorators import task
-from fabric.operations import os, run, local
-from fabric.utils import abort
-from color_printer import colors
-
-from .exceptions import InvalidConfiguration, MissingConfiguration
-
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 DEFAULT_SOURCE_BRANCH = "master"
+
+
+def _print_deployment_summary(env):
+    table_data = [
+        ["Project name:", env.project_name],
+        ["Target:", env.target_name],
+        ["User:", env.user],
+        ["Host(s):", "; ".join(env.hosts)],
+    ]
+
+    table = SingleTable(table_data)
+    table.title = Color('{autoyellow}Deployment configuration{/autoyellow}')
+    table.justify_columns = {0: 'left', 1: 'left'}
+    table.inner_row_border = False
+    table.inner_heading_row_border = False
+
+    print(table.table)
+
+
+def _print_simple_table(s):
+    print(SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]]).table)
 
 
 def function_builder(target, options):
     def function(more_args=None):
 
-        if "warn_on_deploy" in options and options["warn_on_deploy"]:
-            if not confirm('Are you sure you want to work on *{0}* server?'.format(target.upper()), default=True):
-                abort('Deployment cancelled')
-
         env.user = options["user"]
         env.hosts = [options["hosts"]]
+        env.target_name = target
         env.deploy_path = options["deploy_path"]
         env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
@@ -49,10 +72,13 @@ def function_builder(target, options):
         if "key_filename" in options:
             env.key_filename = os.path.normpath(options["key_filename"])
 
-        colors.yellow("####################################################################### ")
-        colors.yellow("# {0}".format(env.project_name))
-        colors.yellow("# User={0}, Host(s)={1}, Target={2}".format(env.user, env.hosts, target))
-        colors.yellow("####################################################################### ")
+        env.urls_to_check = options["urls_to_check"] if "urls_to_check" in options else []
+
+        _print_deployment_summary(env)
+
+        if "warn_on_deploy" in options and options["warn_on_deploy"]:
+            if not confirm('Are you sure you want to work on *{0}* server?'.format(target.upper()), default=True):
+                abort('Deployment cancelled')
 
     return function
 
@@ -76,7 +102,7 @@ def get_tasks():
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
-    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check]:
+    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check, check_urls]:
         yield fabric_task.__name__, fabric_task
 
 
@@ -89,9 +115,9 @@ def venv_run(command_to_run):
 
 @task
 def deploy(upgrade=False, *args, **kwargs):
-    colors.yellow("+----------------------+")
-    colors.yellow("|  Deployment started  |")
-    colors.yellow("+----------------------+")
+    start = time.time()
+
+    _print_simple_table('Deployment started')
 
     if isinstance(upgrade, basestring):
         upgrade = upgrade.lower() == 'true'
@@ -130,10 +156,12 @@ def deploy(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py clean_pyc')
         venv_run('python src/manage.py compilemessages')
 
-        restart()
-        status()
+    restart()
+    status()
+    check_urls()
 
-        colors.green("Done.")
+    total_time_msg = "Deployed :)\nTotal time: {0} seconds.".format(time.time() - start)
+    _print_simple_table(total_time_msg)
 
 
 @task
@@ -147,7 +175,19 @@ def backup(*args, **kwargs):
         venv_run(
             "python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
 
-        colors.green("Done.")
+    colors.green("Done.")
+
+
+@task
+def check_urls(*args, **kwargs):
+    logging.basicConfig(level=logging.DEBUG)
+
+    for url in env.urls_to_check:
+        print("Checking `{0}`".format(url))
+        r = requests.get(url)
+        if r.status_code != 200: abort("HTTP status for `{0}` is `{1}`.".format(url, r.status_code))
+
+    colors.green("Done.")
 
 
 @task
@@ -158,7 +198,7 @@ def update_python_tools(*args, **kwargs):
         venv_run('easy_install --upgrade pip')
         venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel')
 
-        colors.green("Done.")
+    colors.green("Done.")
 
 
 @task
@@ -186,7 +226,7 @@ def restart(*args, **kwargs):
             run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
             run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
 
-        colors.green("Done.")
+    colors.green("Done.")
 
 
 @task
@@ -198,4 +238,4 @@ def status(*args, **kwargs):
         run('service nginx status')
         run('service mysql status')
 
-        colors.green("Done.")
+    colors.green("Done.")

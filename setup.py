@@ -34,7 +34,7 @@ setup(
     # find_packages(exclude=['tests*'])
     packages=['django_fab_deployer'],
 
-    install_requires=['fabric', 'color-printer', 'paramiko==1.15.1'],
+    install_requires=['fabric', 'color-printer', 'paramiko==1.15.1', 'terminaltables'],
     dependency_links=[
         'git+git://github.com/illagrenan/color-printer.git#egg=color-printer',
     ],
