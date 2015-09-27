@@ -114,7 +114,7 @@ def get_tasks():
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
-    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check, check_urls]:
+    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check, check_urls, npm, gulp]:
         yield fabric_task.__name__, fabric_task
 
 
@@ -147,11 +147,16 @@ def deploy(upgrade=False, *args, **kwargs):
         run('git pull --no-edit origin {0}'.format(env.source_branch))
 
         # Dependencies
+        npm(upgrade)
+
+        # Dependencies
         colors.blue("Installing bower dependencies")
 
         with settings(warn_only=True):  # Bower may not be installed
             run('bower prune')  # Uninstalls local extraneous packages.
             run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
+
+        gulp()
 
         colors.blue("Installing pip dependencies")
         venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
@@ -189,6 +194,29 @@ def backup(*args, **kwargs):
 
     colors.green("Done.")
 
+
+@task
+def npm(upgrade=False, *args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Installing node_modules")
+
+        run("npm prune")
+        run("npm install --dev")
+
+        if upgrade:
+            run("npm update")
+
+    colors.green("Done.")
+
+@task
+def gulp(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Starting gulp build")
+
+        run("gulp clean")
+        run("gulp build --production")
+
+    colors.green("Done.")
 
 @task
 def check_urls(*args, **kwargs):
