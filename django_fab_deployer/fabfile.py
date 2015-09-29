@@ -10,7 +10,7 @@ import json
 from time import gmtime, strftime
 import time
 
-from colorclass import Color, Windows
+from colorclass import Color
 import requests
 from fabric.api import env
 from fabric.context_managers import cd, settings
@@ -33,8 +33,6 @@ __all__ = [
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 DEFAULT_SOURCE_BRANCH = "master"
-
-Windows.enable(auto_colors=True, reset_atexit=True)  # Does nothing if not on Windows.
 
 
 def _print_table(table):
@@ -77,9 +75,10 @@ def function_builder(target, options):
         env.deploy_path = options["deploy_path"]
         env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
-        env.celery_enabled = options["celery_enabled"]
+        env.celery_enabled = options.get('celery_enabled', False)
         env.use_ssh_config = True
         env.source_branch = options.get('source_branch', DEFAULT_SOURCE_BRANCH)
+        env.graceful_restart = options.get('graceful_restart', False)
 
         if "key_filename" in options:
             env.key_filename = os.path.normpath(options["key_filename"])
@@ -114,7 +113,15 @@ def get_tasks():
         __all__.append(target)
         globals()[target] = task(name=target)(function_builder(target, options))
 
-    for fabric_task in [venv_run, deploy, backup, update_python_tools, restart, status, check, check_urls, npm, gulp]:
+    for fabric_task in [venv_run,
+                        deploy,
+                        backup,
+                        update_python_tools,
+                        restart,
+                        graceful_restart,
+                        status,
+                        check,
+                        check_urls, npm, gulp]:
         yield fabric_task.__name__, fabric_task
 
 
@@ -173,7 +180,8 @@ def deploy(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py clean_pyc')
         venv_run('python src/manage.py compilemessages')
 
-    restart()
+    graceful_restart() if env.graceful_restart else restart()
+
     status()
     check_urls()
 
@@ -201,12 +209,13 @@ def npm(upgrade=False, *args, **kwargs):
         colors.blue("Installing node_modules")
 
         run("npm prune")
-        run("npm install --dev")
+        run("npm install")
 
         if upgrade:
             run("npm update")
 
     colors.green("Done.")
+
 
 @task
 def gulp(*args, **kwargs):
@@ -217,6 +226,7 @@ def gulp(*args, **kwargs):
         run("gulp build --production")
 
     colors.green("Done.")
+
 
 @task
 def check_urls(*args, **kwargs):
@@ -260,11 +270,28 @@ def restart(*args, **kwargs):
         colors.blue("Restarting Gunicorn")
         run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
 
+        # pid videmi_eu:videmi_eu_gunicorn | xargs kill -s HUP
+
         if env.celery_enabled:
             colors.blue("Restarting Celery")
 
             run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
             run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
+
+    colors.green("Done.")
+
+
+@task
+def graceful_restart(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Restarting Gunicorn with HUP signal")
+        run('pid {0}:{0}_gunicorn | xargs kill -s HUP'.format(env.project_name))
+
+        if env.celery_enabled:
+            colors.blue("Restarting Celery with HUP signal")
+
+            run('pid {0}:{0}_celeryd | xargs kill -s HUP'.format(env.project_name))
+            run('pid {0}:{0}_celerybeat | xargs kill -s HUP'.format(env.project_name))
 
     colors.green("Done.")
 
