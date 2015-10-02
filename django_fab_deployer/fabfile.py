@@ -163,7 +163,7 @@ def deploy(upgrade=False, *args, **kwargs):
         colors.blue("Installing bower dependencies")
 
         with settings(warn_only=True):  # Bower may not be installed
-            run('bower prune')  # Uninstalls local extraneous packages.
+            run('bower prune --config.interactive=false')  # Uninstalls local extraneous packages.
             run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
 
         gulp()
@@ -226,9 +226,9 @@ def clean(upgrade=False, *args, **kwargs):
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
-        venv_run('python src/manage.py clean_pyc --optimize --path=.')
+        venv_run('python src/manage.py clean_pyc --optimize --path=src/')
 
-        venv_run('python src/manage.py compile_pyc --path=.')
+        venv_run('python src/manage.py compile_pyc --path=src/')
 
     colors.green("Done.")
 
