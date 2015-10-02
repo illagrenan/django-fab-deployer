@@ -121,7 +121,10 @@ def get_tasks():
                         graceful_restart,
                         status,
                         check,
-                        check_urls, npm, gulp]:
+                        clean,
+                        check_urls,
+                        npm,
+                        gulp]:
         yield fabric_task.__name__, fabric_task
 
 
@@ -175,9 +178,8 @@ def deploy(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py migrate')
         venv_run('python src/manage.py compress')
 
-        venv_run('python src/manage.py clearsessions')
-        venv_run('python src/manage.py clear_cache')
-        venv_run('python src/manage.py clean_pyc')
+        clean()
+
         venv_run('python src/manage.py compilemessages')
 
     graceful_restart() if env.graceful_restart else restart()
@@ -213,6 +215,20 @@ def npm(upgrade=False, *args, **kwargs):
 
         if upgrade:
             run("npm update")
+
+    colors.green("Done.")
+
+
+@task
+def clean(upgrade=False, *args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Cleaning Django project")
+
+        venv_run('python src/manage.py clearsessions')
+        venv_run('python src/manage.py clear_cache')
+        venv_run('python src/manage.py clean_pyc --optimize --path=.')
+
+        venv_run('python src/manage.py compile_pyc --path=.')
 
     colors.green("Done.")
 
