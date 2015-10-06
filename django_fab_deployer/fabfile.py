@@ -76,12 +76,17 @@ def function_builder(target, options):
         env.project_name = options["project_name"]
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
-        env.use_ssh_config = True
+        env.use_ssh_config = False
         env.source_branch = options.get('source_branch', DEFAULT_SOURCE_BRANCH)
         env.graceful_restart = options.get('graceful_restart', False)
 
         if "key_filename" in options:
-            env.key_filename = os.path.normpath(options["key_filename"])
+            path_to_key = os.path.normpath(os.path.expanduser(options["key_filename"]))
+
+            if not os.path.isfile(path_to_key):
+                abort("{0} is not a file".format(path_to_key))
+
+            env.key_filename = path_to_key
 
         env.urls_to_check = options["urls_to_check"] if "urls_to_check" in options else []
 
@@ -211,10 +216,10 @@ def npm(upgrade=False, *args, **kwargs):
         colors.blue("Installing node_modules")
 
         run("npm prune")
-        run("npm install")
+        run("npm install --no-color --link --no-optional --only=dev --rebuild-bundle=false")
 
         if upgrade:
-            run("npm update")
+            run("npm update --no-color --link --no-optional --only=dev --rebuild-bundle=false")
 
     colors.green("Done.")
 
@@ -274,7 +279,7 @@ def check(*args, **kwargs):
     with settings(warn_only=True):
         local("git status --porcelain")
 
-    local("python src/manage.py check")
+    local("python src/manage.py check --deploy")
     local("python src/manage.py validate_templates")
 
     colors.green("Done.")
@@ -301,13 +306,13 @@ def restart(*args, **kwargs):
 def graceful_restart(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Restarting Gunicorn with HUP signal")
-        run('pid {0}:{0}_gunicorn | xargs kill -s HUP'.format(env.project_name))
+        run('supervisorctl pid {0}:{0}_gunicorn | xargs kill -s HUP'.format(env.project_name))
 
         if env.celery_enabled:
             colors.blue("Restarting Celery with HUP signal")
 
-            run('pid {0}:{0}_celeryd | xargs kill -s HUP'.format(env.project_name))
-            run('pid {0}:{0}_celerybeat | xargs kill -s HUP'.format(env.project_name))
+            run('supervisorctl pid {0}:{0}_celeryd | xargs kill -s HUP'.format(env.project_name))
+            run('supervisorctl pid {0}:{0}_celerybeat | xargs kill -s HUP'.format(env.project_name))
 
     colors.green("Done.")
 
