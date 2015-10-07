@@ -2,7 +2,7 @@ Fabric
 coverage
 ecdsa
 nose
-paramiko==1.15.2
+paramiko==1.15.3
 pycrypto
 unittest2
 wheel
