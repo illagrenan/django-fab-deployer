@@ -129,6 +129,7 @@ def get_tasks():
                         clean,
                         check_urls,
                         npm,
+                        rebuild_staticfiles,
                         gulp]:
         yield fabric_task.__name__, fabric_task
 
@@ -234,6 +235,26 @@ def clean(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py clean_pyc --optimize --path=src/')
 
         venv_run('python src/manage.py compile_pyc --path=src/')
+
+    colors.green("Done.")
+
+
+@task
+def rebuild_staticfiles(*args, **kwargs):
+    if not confirm('Are you sure you want to rebuild all staticfiles?', default=False):
+        abort('Deployment cancelled')
+
+    with cd(env.deploy_path):
+        colors.blue("Rebuilding staticfiles")
+
+        run("rm -r data/static")
+
+        venv_run('python src/manage.py collectstatic --noinput')
+        run('bower install --config.interactive=false')
+
+        gulp()
+
+        venv_run('python src/manage.py compress')
 
     colors.green("Done.")
 
