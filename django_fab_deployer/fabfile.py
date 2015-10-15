@@ -11,6 +11,8 @@ from time import gmtime, strftime
 import time
 
 from colorclass import Color
+from fabric.contrib.project import rsync_project
+from fabric.network import needs_host
 import requests
 from fabric.api import env
 from fabric.context_managers import cd, settings
@@ -18,9 +20,12 @@ from fabric.contrib.console import confirm
 from fabric.decorators import task
 from fabric.operations import os, run, local
 from fabric.utils import abort
+
 from color_printer import colors
+
 from terminaltables import SingleTable
 
+from django_fab_deployer.utils import fab_arg_to_bool
 from .exceptions import InvalidConfiguration, MissingConfiguration
 
 __all__ = [
@@ -129,6 +134,7 @@ def get_tasks():
                         clean,
                         check_urls,
                         npm,
+                        get_media,
                         rebuild_staticfiles,
                         gulp]:
         yield fabric_task.__name__, fabric_task
@@ -142,13 +148,13 @@ def venv_run(command_to_run):
 
 
 @task
+@needs_host
 def deploy(upgrade=False, *args, **kwargs):
     start = time.time()
 
     _print_simple_table('Deployment started')
 
-    if isinstance(upgrade, basestring):
-        upgrade = upgrade.lower() == 'true'
+    upgrade = fab_arg_to_bool(upgrade)
 
     check()
 
@@ -207,6 +213,22 @@ def backup(*args, **kwargs):
         now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
         venv_run(
             "python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
+
+    colors.green("Done.")
+
+
+@task
+def get_media(delete=False, *args, **kwargs):
+    delete = fab_arg_to_bool(delete)
+
+    with cd(env.deploy_path):
+        colors.blue("Rsyncing local media with remote")
+
+        rsync_project(local_dir='data/media',
+                      remote_dir='data/media',
+                      exclude=['.git*', 'cache*', 'filer_*'],
+                      delete=delete,
+                      upload=False)
 
     colors.green("Done.")
 
