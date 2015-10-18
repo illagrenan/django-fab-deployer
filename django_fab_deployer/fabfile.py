@@ -18,14 +18,16 @@ from fabric.api import env
 from fabric.context_managers import cd, settings
 from fabric.contrib.console import confirm
 from fabric.decorators import task
+
 from fabric.operations import os, run, local
+
 from fabric.utils import abort
 
 from color_printer import colors
 
 from terminaltables import SingleTable
 
-from django_fab_deployer.utils import fab_arg_to_bool
+from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration
 
 __all__ = [
@@ -105,12 +107,21 @@ def function_builder(target, options):
 
 
 def get_tasks():
-    try:
-        with open(os.path.join(os.getcwd(), DEPLOYMENT_CONFIG_FILE), "r") as deploy_config_file:
+    path_list_to_search = [
+        # Current directory
+        os.getcwd(),
+        # Parent directory
+        os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+    ]
+
+    deploy_config_file_path = find_file_in_path(DEPLOYMENT_CONFIG_FILE, path_list_to_search)
+
+    if deploy_config_file_path:
+        with open(deploy_config_file_path, "r") as deploy_config_file:
             data = deploy_config_file.read()
-    except IOError:
+    else:
         raise MissingConfiguration(
-            "Configuration file `{0}` was not found in `{1}`".format(DEPLOYMENT_CONFIG_FILE, os.getcwd())
+            "Configuration file `{0}` was not found in `{1}`".format(DEPLOYMENT_CONFIG_FILE, path_list_to_search)
         )
 
     try:
@@ -136,6 +147,8 @@ def get_tasks():
                         npm,
                         get_media,
                         rebuild_staticfiles,
+                        get_dumps,
+                        dump_db,
                         gulp]:
         yield fabric_task.__name__, fabric_task
 
@@ -160,7 +173,7 @@ def deploy(upgrade=False, *args, **kwargs):
 
     with cd(env.deploy_path):
         # Create backup
-        backup()
+        dump_db()
 
         # Source code
         colors.blue("Pulling from git")
@@ -218,6 +231,16 @@ def backup(*args, **kwargs):
 
 
 @task
+def dump_db(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Dumping database")
+
+        venv_run('python src/manage.py dbdump --destination=data/backup')
+
+    colors.green("Done.")
+
+
+@task
 def get_media(delete=False, *args, **kwargs):
     delete = fab_arg_to_bool(delete)
 
@@ -226,6 +249,22 @@ def get_media(delete=False, *args, **kwargs):
 
         rsync_project(local_dir='data/media',
                       remote_dir='data/media',
+                      exclude=['.git*', 'cache*', 'filer_*'],
+                      delete=delete,
+                      upload=False)
+
+    colors.green("Done.")
+
+
+@task
+def get_dumps(delete=False, *args, **kwargs):
+    delete = fab_arg_to_bool(delete)
+
+    with cd(env.deploy_path):
+        colors.blue("Rsyncing local backups with remote")
+
+        rsync_project(local_dir='data/backup',
+                      remote_dir='data/backup',
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
                       upload=False)
@@ -331,16 +370,10 @@ def check(*args, **kwargs):
 @task
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Restarting Gunicorn")
-        run('supervisorctl restart {0}:{0}_gunicorn'.format(env.project_name))
+        colors.blue("Restarting application group")
+        run('supervisorctl restart {0}:*'.format(env.project_name))
 
-        # pid videmi_eu:videmi_eu_gunicorn | xargs kill -s HUP
-
-        if env.celery_enabled:
-            colors.blue("Restarting Celery")
-
-            run('supervisorctl restart {0}:{0}_celeryd'.format(env.project_name))
-            run('supervisorctl restart {0}:{0}_celerybeat'.format(env.project_name))
+    status()
 
     colors.green("Done.")
 
