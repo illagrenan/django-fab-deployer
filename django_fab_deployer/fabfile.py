@@ -18,11 +18,8 @@ from fabric.api import env
 from fabric.context_managers import cd, settings
 from fabric.contrib.console import confirm
 from fabric.decorators import task
-
 from fabric.operations import os, run, local
-
 from fabric.utils import abort
-
 from color_printer import colors
 
 from terminaltables import SingleTable
@@ -263,7 +260,7 @@ def get_dumps(delete=False, *args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Rsyncing local backups with remote")
 
-        rsync_project(local_dir='data/backup',
+        rsync_project(local_dir='data/',
                       remote_dir='data/backup',
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
