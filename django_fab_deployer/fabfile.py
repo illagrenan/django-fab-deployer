@@ -255,7 +255,7 @@ def dump_db(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Dumping database")
 
-        dbdump_extra_option = '--pgpass' if 'postgresql' in _get_database_engine() else ''
+        dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
         venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
 
     colors.green("Done.")
