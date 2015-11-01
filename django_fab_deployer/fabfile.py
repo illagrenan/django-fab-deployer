@@ -9,8 +9,7 @@ import os
 import json
 from time import gmtime, strftime
 import time
-
-from colorclass import Color
+from StringIO import StringIO
 
 from fabric.contrib.project import rsync_project
 
@@ -19,19 +18,17 @@ import requests
 
 from fabric.api import env
 
-from fabric.context_managers import cd, settings
-
+from fabric.context_managers import cd, settings, hide
 from fabric.contrib.console import confirm
-
 from fabric.decorators import task
-
 from fabric.operations import os, run, local
-
 from fabric.utils import abort
-
-from terminaltables import SingleTable
-
 from color_printer import colors
+from fabric.api import get
+
+import environ
+from colorclass import Color
+from terminaltables import SingleTable
 from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration
 
@@ -76,14 +73,6 @@ def _print_deployment_summary(env):
 def _print_simple_table(s):
     table = SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]])
     _print_table(table)
-
-
-def _get_database_engine():
-    import environ
-    env = environ.Env()
-    env.read_env(".env")
-
-    return env.db()['ENGINE']
 
 
 def function_builder(target, options):
@@ -162,6 +151,7 @@ def get_tasks():
                         get_media,
                         rebuild_staticfiles,
                         get_dumps,
+                        get_database_engine,
                         dump_db,
                         gulp]:
         yield fabric_task.__name__, fabric_task
@@ -172,6 +162,22 @@ get_tasks()
 
 def venv_run(command_to_run):
     run('source %s' % env.venv_path + ' && ' + command_to_run)
+
+
+@task
+@needs_host
+def get_database_engine(*args, **kwargs):
+    fd = StringIO()
+
+    with hide('output', 'running'):
+        with cd(env.deploy_path):
+            get('.env', fd)
+            content = fd.getvalue()
+
+    dj_env = environ.Env()
+    dj_env.read_env(".env")
+
+    return dj_env.db()['ENGINE']
 
 
 @task
@@ -418,9 +424,14 @@ def status(*args, **kwargs):
         watched_services = [
             'nginx',
             'supervisor',
-            'postgresql' if 'postgresql' in _get_database_engine() else 'mysql',
-
         ]
+
+        db_engine = get_database_engine()
+
+        if 'postgresql' in db_engine:
+            watched_services.append('postgresql')
+        elif 'mysql' in db_engine:
+            watched_services.append('mysql')
 
         for service in watched_services:
             run('service {} status'.format(service))
