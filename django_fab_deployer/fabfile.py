@@ -11,19 +11,27 @@ from time import gmtime, strftime
 import time
 
 from colorclass import Color
+
 from fabric.contrib.project import rsync_project
+
 from fabric.network import needs_host
 import requests
+
 from fabric.api import env
+
 from fabric.context_managers import cd, settings
+
 from fabric.contrib.console import confirm
+
 from fabric.decorators import task
+
 from fabric.operations import os, run, local
+
 from fabric.utils import abort
-from color_printer import colors
 
 from terminaltables import SingleTable
 
+from color_printer import colors
 from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration
 
@@ -68,6 +76,14 @@ def _print_deployment_summary(env):
 def _print_simple_table(s):
     table = SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]])
     _print_table(table)
+
+
+def _get_database_engine():
+    import environ
+    env = environ.Env()
+    env.read_env(".env")
+
+    return env.db()['ENGINE']
 
 
 def function_builder(target, options):
@@ -160,6 +176,9 @@ def venv_run(command_to_run):
 @task
 @needs_host
 def deploy(upgrade=False, *args, **kwargs):
+    _get_database_engine()
+    return
+
     start = time.time()
 
     _print_simple_table('Deployment started')
@@ -232,7 +251,8 @@ def dump_db(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Dumping database")
 
-        venv_run('python src/manage.py dbdump --destination=data/backup')
+        dbdump_extra_option = '--pgpass' if 'postgresql' in _get_database_engine() else ''
+        venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
 
     colors.green("Done.")
 
@@ -396,7 +416,15 @@ def status(*args, **kwargs):
         colors.blue("Retrieving status")
 
         run('supervisorctl status | grep "{0}"'.format(env.project_name))
-        run('service nginx status')
-        run('service mysql status')
+
+        watched_services = [
+            'nginx',
+            'supervisor',
+            'postgresql' if 'postgresql' in _get_database_engine() else 'mysql',
+
+        ]
+
+        for service in watched_services:
+            run('service {} status'.format(service))
 
     colors.green("Done.")
