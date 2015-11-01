@@ -177,9 +177,6 @@ def venv_run(command_to_run):
 @task
 @needs_host
 def deploy(upgrade=False, *args, **kwargs):
-    _get_database_engine()
-    return
-
     start = time.time()
 
     _print_simple_table('Deployment started')
