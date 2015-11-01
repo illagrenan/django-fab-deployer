@@ -109,6 +109,7 @@ def function_builder(target, options):
             env.key_filename = path_to_key
 
         env.urls_to_check = options["urls_to_check"] if "urls_to_check" in options else []
+        env.urls_to_check_verify_ssl_certificate = options.get('urls_to_check_verify_ssl_certificate', True)
 
         _print_deployment_summary(env)
 
@@ -354,7 +355,7 @@ def check_urls(*args, **kwargs):
 
     for url in env.urls_to_check:
         print("Checking `{0}`".format(url))
-        r = requests.get(url)
+        r = requests.get(url, verify=env.urls_to_check_verify_ssl_certificate)
         if r.status_code != 200: abort("HTTP status for `{0}` is `{1}`.".format(url, r.status_code))
 
     colors.green("Done.")
