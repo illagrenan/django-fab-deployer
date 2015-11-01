@@ -170,7 +170,7 @@ def deploy(upgrade=False, *args, **kwargs):
 
     with cd(env.deploy_path):
         # Create backup
-        dump_db()
+        # dump_db()
 
         # Source code
         colors.blue("Pulling from git")
