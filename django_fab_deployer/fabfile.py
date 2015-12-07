@@ -1,34 +1,32 @@
 # coding=utf-8
 
-from __future__ import print_function
 from __future__ import division
+from __future__ import print_function
 from __future__ import unicode_literals
 
+import json
 import logging
 import os
-import json
-from time import gmtime, strftime
+import tempfile
 import time
 from StringIO import StringIO
-
-from fabric.contrib.project import rsync_project
-
-from fabric.network import needs_host
-import requests
-
-from fabric.api import env
-
-from fabric.context_managers import cd, settings, hide
-from fabric.contrib.console import confirm
-from fabric.decorators import task
-from fabric.operations import os, run, local
-from fabric.utils import abort
-from color_printer import colors
-from fabric.api import get
+from time import gmtime, strftime
 
 import environ
+import requests
+from color_printer import colors
 from colorclass import Color
+from fabric.api import env
+from fabric.api import get
+from fabric.context_managers import cd, settings, hide
+from fabric.contrib.console import confirm
+from fabric.contrib.project import rsync_project
+from fabric.decorators import task
+from fabric.network import needs_host
+from fabric.operations import os, run, local
+from fabric.utils import abort
 from terminaltables import SingleTable
+
 from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration
 
@@ -175,9 +173,15 @@ def get_database_engine(*args, **kwargs):
             content = fd.getvalue()
 
     dj_env = environ.Env()
-    dj_env.read_env(".env")
 
-    return dj_env.db()['ENGINE']
+    with tempfile.NamedTemporaryFile(delete=False) as temp:
+        temp.write(content)
+        temp.flush()
+        dj_env.read_env(temp.name)
+        en = dj_env.db()['ENGINE']
+
+    os.remove(temp.name)
+    return en
 
 
 @task
@@ -214,8 +218,7 @@ def deploy(upgrade=False, *args, **kwargs):
         gulp()
 
         colors.blue("Installing pip dependencies")
-        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % (
-            '--upgrade' if upgrade  else ''))
+        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % ('--upgrade' if upgrade  else ''))
 
         # Django tasks
         colors.blue("Running Django commands")
@@ -384,6 +387,7 @@ def check(*args, **kwargs):
 
     local("python src/manage.py check --deploy")
     local("python src/manage.py validate_templates")
+    local("python src/manage.py test --noinput")
 
     colors.green("Done.")
 
