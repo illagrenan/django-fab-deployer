@@ -386,7 +386,8 @@ def check(*args, **kwargs):
         local("git status --porcelain")
 
     local("python src/manage.py check --deploy")
-    local("python src/manage.py validate_templates")
+    with settings(warn_only=True):
+        local("python src/manage.py validate_templates")
     local("python src/manage.py test --noinput")
 
     colors.green("Done.")
