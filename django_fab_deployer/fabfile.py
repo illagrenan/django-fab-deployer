@@ -1,8 +1,7 @@
-# coding=utf-8
+# -*- encoding: utf-8 -*-
+# ! python2
 
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+from __future__ import (absolute_import, division, print_function, unicode_literals)
 
 import json
 import logging
@@ -317,6 +316,8 @@ def clean(upgrade=False, *args, **kwargs):
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
+        with settings(warn_only=True):
+            venv_run('python src/manage.py thumbnail clear')
         venv_run('python src/manage.py clean_pyc --optimize --path=src/')
 
         venv_run('python src/manage.py compile_pyc --path=src/')
