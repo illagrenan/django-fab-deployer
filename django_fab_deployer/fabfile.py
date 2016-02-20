@@ -164,7 +164,6 @@ def venv_run(command_to_run):
 @task
 @needs_host
 def get_database_engine(*args, **kwargs):
-
     # TODO Use manage.py sqldsn
     fd = StringIO()
 
@@ -288,7 +287,7 @@ def get_dumps(delete=False, *args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Rsyncing local backups with remote")
 
-        rsync_project(local_dir='data/',
+        rsync_project(local_dir='data/backup',
                       remote_dir='data/backup',
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,

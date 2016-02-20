@@ -38,11 +38,11 @@ setup(
     dependency_links=[
         'git+git://github.com/illagrenan/color-printer.git#egg=color-printer',
     ],
-    entry_points={
-        'console_scripts': [
-            'djdeploy=django_fab_deployer.runner:main'
-        ],
-    },
+    # entry_points={
+    #    'console_scripts': [
+    #        'djdeploy=django_fab_deployer.runner:main'
+    #    ],
+    # },
     include_package_data=True,
     classifiers=[
         'Programming Language :: Python :: 2.7',
