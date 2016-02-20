@@ -164,6 +164,8 @@ def venv_run(command_to_run):
 @task
 @needs_host
 def get_database_engine(*args, **kwargs):
+
+    # TODO Use manage.py sqldsn
     fd = StringIO()
 
     with hide('output', 'running'):
@@ -310,7 +312,7 @@ def npm(upgrade=False, *args, **kwargs):
 
 
 @task
-def clean(upgrade=False, *args, **kwargs):
+def clean(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Cleaning Django project")
 
@@ -318,8 +320,8 @@ def clean(upgrade=False, *args, **kwargs):
         venv_run('python src/manage.py clear_cache')
         with settings(warn_only=True):
             venv_run('python src/manage.py thumbnail clear')
-        venv_run('python src/manage.py clean_pyc --optimize --path=src/')
 
+        venv_run('python src/manage.py clean_pyc --optimize --path=src/')
         venv_run('python src/manage.py compile_pyc --path=src/')
 
     colors.green("Done.")
