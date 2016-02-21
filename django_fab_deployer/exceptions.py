@@ -10,3 +10,7 @@ class InvalidConfiguration(Exception):
 
 class MissingConfiguration(Exception):
     pass
+
+
+class FabricException(Exception):
+    pass

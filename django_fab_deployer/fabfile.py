@@ -27,7 +27,7 @@ from fabric.utils import abort
 from terminaltables import SingleTable
 
 from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
-from .exceptions import InvalidConfiguration, MissingConfiguration
+from .exceptions import InvalidConfiguration, MissingConfiguration, FabricException
 
 __all__ = [
     'venv_run',
@@ -247,19 +247,41 @@ def backup(*args, **kwargs):
         run("mkdir -p data/deployment_backup")
 
         now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
+
         venv_run(
             "python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
 
     colors.green("Done.")
 
 
-@task
+@task(alias='dumpdb')
 def dump_db(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Dumping database")
 
-        dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
-        venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
+        now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
+
+        with settings(abort_exception=FabricException):
+            if 'postgresql' in get_database_engine():
+                try:
+                    run("pg_dump --no-owner -f data/backup/{0}_{1}.sql".format(env.project_name, now_time))
+                except FabricException:
+                    print("Hint: create configuration file with nano ~/.pgpass")
+                    print("# hostname:port:database:username:password" + os.linesep +
+                          "*:*:{0}:{0}:xxx".format(env.project_name))
+            else:
+                try:
+                    run("mysqldump --databases {0} > data/backup/{0}_{1}.sql".format(env.project_name, now_time))
+                except FabricException:
+                    print("Hint: create configuration file with nano ~/.my.cnf")
+                    print("[client]" + os.linesep +
+                          "user = {}".format(env.project_name) + os.linesep +
+                          "password = xxx" +
+                          os.linesep +
+                          "host = 127.0.0.1")
+
+                    # dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
+                    # venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
 
     colors.green("Done.")
 
@@ -271,8 +293,8 @@ def get_media(delete=False, *args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Rsyncing local media with remote")
 
-        rsync_project(local_dir='data/media',
-                      remote_dir='data/media',
+        rsync_project(local_dir='data/',
+                      remote_dir="{0}/data/media".format(env.deploy_path.rstrip("/")),
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
                       upload=False)
@@ -287,8 +309,8 @@ def get_dumps(delete=False, *args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Rsyncing local backups with remote")
 
-        rsync_project(local_dir='data/backup',
-                      remote_dir='data/backup',
+        rsync_project(local_dir='data/',
+                      remote_dir="{0}/data/backup".format(env.deploy_path.rstrip("/")),
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
                       upload=False)
