@@ -17,7 +17,7 @@ from color_printer import colors
 from colorclass import Color
 from fabric.api import env
 from fabric.api import get
-from fabric.context_managers import cd, settings, hide
+from fabric.context_managers import cd, settings, hide, shell_env
 from fabric.contrib.console import confirm
 from fabric.contrib.project import rsync_project
 from fabric.decorators import task
@@ -29,13 +29,7 @@ from terminaltables import SingleTable
 from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration, FabricException
 
-__all__ = [
-    'venv_run',
-    'deploy',
-    'backup',
-    'update_python_tools',
-    'restart'
-]
+__all__ = []
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 DEFAULT_SOURCE_BRANCH = "master"
@@ -80,8 +74,12 @@ def function_builder(target, options):
         env.target_name = target
         env.deploy_path = options["deploy_path"]
         env.project_name = options["project_name"]
+        env.supervisor_program = options["supervisor_program"] if "supervisor_program" in options else env.project_name
+        env.db_name = options["db_name"] if "db_name" in options else env.project_name
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
+        env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
+        env.export_env = options["export_env"] if "export_env" in options else {}
         env.use_ssh_config = False
         env.source_branch = options.get('source_branch', DEFAULT_SOURCE_BRANCH)
         env.graceful_restart = options.get('graceful_restart', False)
@@ -127,7 +125,7 @@ def get_tasks():
     try:
         deployment_data = json.loads(data)
     except ValueError as e:
-        raise InvalidConfiguration(e.message)
+        raise InvalidConfiguration("Cannot load your deployment configuration. JSON file is probably broken. Additional message: %s" % e.message)
 
     for target, options in deployment_data.items():
         yield target, task(name=target)(function_builder(target, options))
@@ -150,6 +148,11 @@ def get_tasks():
                         get_dumps,
                         get_database_engine,
                         dump_db,
+                        shell_plus,
+                        migrate,
+                        manage,
+                        pull,
+                        pip_install,
                         gulp]:
         yield fabric_task.__name__, fabric_task
 
@@ -186,57 +189,102 @@ def get_database_engine(*args, **kwargs):
 
 @task
 @needs_host
-def deploy(upgrade=False, *args, **kwargs):
-    start = time.time()
+def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
+    with shell_env(**env.export_env):
+        start = time.time()
 
-    _print_simple_table('Deployment started')
+        _print_simple_table('Deployment started')
 
-    upgrade = fab_arg_to_bool(upgrade)
+        upgrade = fab_arg_to_bool(upgrade)
+        skip_npm = fab_arg_to_bool(skip_npm)
+        skip_check = fab_arg_to_bool(skip_check)
 
-    check()
+        if not skip_check:
+            check()
+        else:
+            colors.yellow("CHECK skipped!")
 
-    with cd(env.deploy_path):
-        # Create backup
-        # dump_db()
+        with cd(env.deploy_path):
+            # Create backup
+            dump_db()
 
-        # Source code
-        colors.blue("Pulling from git")
-        run('git reset --hard')
-        run('git checkout {0}'.format(env.source_branch))
-        run('git pull --no-edit origin {0}'.format(env.source_branch))
+            # Source code
+            pull()
 
-        # Dependencies
-        npm(upgrade)
+            if not skip_npm:
+                # Dependencies
+                npm(upgrade)
+            else:
+                colors.yellow("NPM skipped!")
 
-        # Dependencies
-        colors.blue("Installing bower dependencies")
+            # Dependencies
+            colors.blue("Installing bower dependencies")
 
-        with settings(warn_only=True):  # Bower may not be installed
-            run('bower prune --config.interactive=false')  # Uninstalls local extraneous packages.
-            run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
+            with settings(warn_only=True):  # Bower may not be installed
+                run('bower prune --config.interactive=false')  # Uninstalls local extraneous packages.
+                run('bower %s --config.interactive=false' % ('update' if upgrade else 'install'))
 
-        gulp()
+            gulp()
+            pip_install(upgrade, *args, **kwargs)
 
-        colors.blue("Installing pip dependencies")
-        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % ('--upgrade' if upgrade  else ''))
+            # Django tasks
+            colors.blue("Running Django commands")
+            venv_run('python src/manage.py collectstatic --noinput')
 
-        # Django tasks
-        colors.blue("Running Django commands")
-        venv_run('python src/manage.py collectstatic --noinput')
-        venv_run('python src/manage.py migrate')
-        venv_run('python src/manage.py compress')
+            migrate()
 
-        clean()
+            venv_run('python src/manage.py compress')
 
-        venv_run('python src/manage.py compilemessages')
+            clean()
 
-    graceful_restart() if env.graceful_restart else restart()
+            venv_run('python src/manage.py compilemessages')
+            venv_run("python src/manage.py check --deploy")
+
+        graceful_restart() if env.graceful_restart else restart()
 
     status()
     check_urls()
 
-    total_time_msg = "Deployed :)\nTotal time: {0} seconds.".format(time.time() - start)
+    total_time_msg = "Deployed :)\nTotal time: {0} seconds.".format(int(time.time() - start))
     _print_simple_table(total_time_msg)
+
+
+@task
+def migrate(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Migrating database")
+
+        venv_run('python src/manage.py migrate')
+
+        if env.extra_databases:
+            for one_db in env.extra_databases:
+                venv_run('python src/manage.py migrate --database {db}'.format(db=one_db))
+
+    colors.green("Done.")
+
+
+@task
+def pull(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Pulling from git")
+
+        run('git reset --hard')
+        run('git checkout {0}'.format(env.source_branch))
+        run('git pull --no-edit origin {0}'.format(env.source_branch))
+
+    colors.green("Done.")
+
+
+@task
+def pip_install(upgrade=False, *args, **kwargs):
+    upgrade = fab_arg_to_bool(upgrade)
+
+    with cd(env.deploy_path):
+        colors.blue("Installing pip dependencies")
+
+        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % ('--upgrade' if upgrade  else ''))
+
+    colors.green("Done.")
 
 
 @task
@@ -248,8 +296,28 @@ def backup(*args, **kwargs):
 
         now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
 
-        venv_run(
-            "python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
+        venv_run("python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
+
+    colors.green("Done.")
+
+
+@task
+def shell_plus(*args, **kwargs):
+    with cd(env.deploy_path):
+        colors.blue("Running IPython")
+
+        venv_run("python src/manage.py shell_plus")
+
+    colors.green("Done.")
+
+
+@task
+def manage(command, *args, **kwargs):
+    with shell_env(**env.export_env):
+        with cd(env.deploy_path):
+            colors.blue("Running Django management command")
+
+            venv_run("python src/manage.py {command}".format(command=command.strip()))
 
     colors.green("Done.")
 
@@ -264,7 +332,7 @@ def dump_db(*args, **kwargs):
         with settings(abort_exception=FabricException):
             if 'postgresql' in get_database_engine():
                 try:
-                    run("pg_dump --no-owner -f data/backup/{0}_{1}.sql".format(env.project_name, now_time))
+                    run("pg_dump --dbname={db_name} --no-owner -f data/backup/{project_name}_{now_time}.sql".format(db_name=env.db_name, project_name=env.project_name, now_time=now_time))
                 except FabricException:
                     print("Hint: create configuration file with nano ~/.pgpass")
                     print("# hostname:port:database:username:password" + os.linesep +
@@ -297,6 +365,7 @@ def get_media(delete=False, *args, **kwargs):
                       remote_dir="{0}/data/media".format(env.deploy_path.rstrip("/")),
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
+                      ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
     colors.green("Done.")
@@ -313,9 +382,14 @@ def get_dumps(delete=False, *args, **kwargs):
                       remote_dir="{0}/data/backup".format(env.deploy_path.rstrip("/")),
                       exclude=['.git*', 'cache*', 'filer_*'],
                       delete=delete,
+                      ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
     colors.green("Done.")
+
+
+def _get_known_hosts_local_path():
+    return os.path.normpath(os.path.expanduser(os.path.join(env.ssh_config_path, "../known_hosts")))
 
 
 @task
@@ -324,21 +398,25 @@ def npm(upgrade=False, *args, **kwargs):
         colors.blue("Installing node_modules")
 
         run("npm prune")
-        run("npm install --no-color --link --no-optional --only=dev --rebuild-bundle=false")
+        run("npm set progress=false")
+        run("npm install --no-optional")
 
         if upgrade:
-            run("npm update --no-color --link --no-optional --only=dev --rebuild-bundle=false")
+            run("npm update --no-optional")
+
+        run("npm set progress=true")
 
     colors.green("Done.")
 
 
-@task
+@task(alias='cl')
 def clean(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Cleaning Django project")
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
+
         with settings(warn_only=True):
             venv_run('python src/manage.py thumbnail clear')
 
@@ -348,7 +426,7 @@ def clean(*args, **kwargs):
     colors.green("Done.")
 
 
-@task
+@task(alias='rs')
 def rebuild_staticfiles(*args, **kwargs):
     if not confirm('Are you sure you want to rebuild all staticfiles?', default=False):
         abort('Deployment cancelled')
@@ -368,7 +446,7 @@ def rebuild_staticfiles(*args, **kwargs):
     colors.green("Done.")
 
 
-@task
+@task(alias='g')
 def gulp(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Starting gulp build")
@@ -379,7 +457,7 @@ def gulp(*args, **kwargs):
     colors.green("Done.")
 
 
-@task
+@task(alias='cu')
 def check_urls(*args, **kwargs):
     logging.basicConfig(level=logging.DEBUG)
 
@@ -391,18 +469,18 @@ def check_urls(*args, **kwargs):
     colors.green("Done.")
 
 
-@task
+@task(alias='upt')
 def update_python_tools(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Updating Python tools")
 
         venv_run('easy_install --upgrade pip')
-        venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel')
+        venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel ipython ipdb')
 
     colors.green("Done.")
 
 
-@task
+@task(alias='c')
 def check(*args, **kwargs):
     colors.blue("Checking local project")
 
@@ -410,45 +488,47 @@ def check(*args, **kwargs):
         local("git status --porcelain")
 
     local("python src/manage.py check --deploy")
+
     with settings(warn_only=True):
         local("python src/manage.py validate_templates")
+
     local("python src/manage.py test --noinput")
 
     colors.green("Done.")
 
 
-@task
+@task(alias='r')
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Restarting application group")
-        run('supervisorctl restart {0}:*'.format(env.project_name))
+        run('supervisorctl restart {program_name}:*'.format(program_name=env.supervisor_program))
 
     status()
 
     colors.green("Done.")
 
 
-@task
+@task(alias='gr')
 def graceful_restart(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Restarting Gunicorn with HUP signal")
-        run('supervisorctl pid {0}:{0}_gunicorn | xargs kill -s HUP'.format(env.project_name))
+        run('supervisorctl pid {program_name}:{part}_gunicorn | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
 
         if env.celery_enabled:
             colors.blue("Restarting Celery with HUP signal")
 
-            run('supervisorctl pid {0}:{0}_celeryd | xargs kill -s HUP'.format(env.project_name))
-            run('supervisorctl pid {0}:{0}_celerybeat | xargs kill -s HUP'.format(env.project_name))
+            run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
+            run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
 
     colors.green("Done.")
 
 
-@task
+@task(alias='s')
 def status(*args, **kwargs):
     with cd(env.deploy_path):
         colors.blue("Retrieving status")
 
-        run('supervisorctl status | grep "{0}"'.format(env.project_name))
+        run('supervisorctl status | grep "{program_name}"'.format(program_name=env.supervisor_program))
 
         watched_services = [
             'nginx',
