@@ -13,8 +13,7 @@ from time import gmtime, strftime
 
 import environ
 import requests
-from color_printer import colors
-from colorclass import Color
+from colorama import init, Fore, Back
 from fabric.api import env
 from fabric.api import get
 from fabric.context_managers import cd, settings, hide, shell_env
@@ -24,15 +23,16 @@ from fabric.decorators import task
 from fabric.network import needs_host
 from fabric.operations import os, run, local
 from fabric.utils import abort
-from terminaltables import SingleTable
 
-from django_fab_deployer.utils import fab_arg_to_bool, find_file_in_path
 from .exceptions import InvalidConfiguration, MissingConfiguration, FabricException
+from .utils import fab_arg_to_bool, find_file_in_path
 
 __all__ = []
 
 DEPLOYMENT_CONFIG_FILE = "deploy.json"
 DEFAULT_SOURCE_BRANCH = "master"
+
+init(autoreset=True)
 
 
 def _print_table(table):
@@ -45,25 +45,16 @@ def _print_table(table):
 
 
 def _print_deployment_summary(env):
-    table_data = [
-        ["Project name:", env.project_name],
-        ["Target:", env.target_name],
-        ["User:", env.user],
-        ["Host(s):", "; ".join(env.hosts)],
-    ]
+    print(Fore.YELLOW + "- - - - - - - - - - - - - - - - - - - -")
+    print(Fore.YELLOW + "Deployment configuration")
+    print(Fore.YELLOW + "- - - - - - - - - - - - - - - - - - - -")
 
-    table = SingleTable(table_data)
-    table.title = Color('{autoyellow}Deployment configuration{/autoyellow}')
-    table.justify_columns = {0: 'left', 1: 'left'}
-    table.inner_row_border = False
-    table.inner_heading_row_border = False
+    print('{0:<10} {1:>8}'.format("Name:", env.project_name))
+    print('{0:<10} {1:>8}'.format("Target:", env.target_name))
+    print('{0:<10} {1:>8}'.format("User:", env.user))
+    print('{0:<10} {1:>8}'.format("Host(s):", "; ".join(env.hosts)))
 
-    _print_table(table)
-
-
-def _print_simple_table(s):
-    table = SingleTable([[Color('{autoblue}' + s + '{/autoblue}')]])
-    _print_table(table)
+    print(Fore.YELLOW + "- - - - - - - - - - - - - - - - - - - -")
 
 
 def function_builder(target, options):
@@ -193,7 +184,7 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
     with shell_env(**env.export_env):
         start = time.time()
 
-        _print_simple_table('Deployment started')
+        print(Back.GREEN + 'Deployment started')
 
         upgrade = fab_arg_to_bool(upgrade)
         skip_npm = fab_arg_to_bool(skip_npm)
@@ -202,7 +193,7 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
         if not skip_check:
             check()
         else:
-            colors.yellow("CHECK skipped!")
+            print(Fore.YELLOW + "CHECK skipped!")
 
         with cd(env.deploy_path):
             # Create backup
@@ -215,10 +206,10 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
                 # Dependencies
                 npm(upgrade)
             else:
-                colors.yellow("NPM skipped!")
+                print(Fore.YELLOW + "NPM skipped!")
 
             # Dependencies
-            colors.blue("Installing bower dependencies")
+            print(Fore.BLUE + "Installing bower dependencies")
 
             with settings(warn_only=True):  # Bower may not be installed
                 run('bower prune --config.interactive=false')  # Uninstalls local extraneous packages.
@@ -228,7 +219,7 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
             pip_install(upgrade, *args, **kwargs)
 
             # Django tasks
-            colors.blue("Running Django commands")
+            print(Fore.BLUE + "Running Django commands")
             venv_run('python src/manage.py collectstatic --noinput')
 
             migrate()
@@ -246,13 +237,13 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
     check_urls()
 
     total_time_msg = "Deployed :)\nTotal time: {0} seconds.".format(int(time.time() - start))
-    _print_simple_table(total_time_msg)
+    print(Back.GREEN + total_time_msg)
 
 
 @task
 def migrate(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Migrating database")
+        print(Fore.BLUE + "Migrating database")
 
         venv_run('python src/manage.py migrate')
 
@@ -260,19 +251,19 @@ def migrate(*args, **kwargs):
             for one_db in env.extra_databases:
                 venv_run('python src/manage.py migrate --database {db}'.format(db=one_db))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
 def pull(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Pulling from git")
+        print(Fore.BLUE + "Pulling from git")
 
         run('git reset --hard')
         run('git checkout {0}'.format(env.source_branch))
         run('git pull --no-edit origin {0}'.format(env.source_branch))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
@@ -280,17 +271,17 @@ def pip_install(upgrade=False, *args, **kwargs):
     upgrade = fab_arg_to_bool(upgrade)
 
     with cd(env.deploy_path):
-        colors.blue("Installing pip dependencies")
+        print(Fore.BLUE + "Installing pip dependencies")
 
-        venv_run('pip install --no-input --exists-action=i -r requirements/production.txt --use-wheel %s' % ('--upgrade' if upgrade  else ''))
+        venv_run('pip install --no-input --exists-action=i --use-wheel %s -r requirements/production.txt' % ('--upgrade' if upgrade  else ''))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
 def backup(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Creating backup")
+        print(Fore.BLUE + "Creating backup")
 
         run("mkdir -p data/deployment_backup")
 
@@ -298,34 +289,34 @@ def backup(*args, **kwargs):
 
         venv_run("python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
 def shell_plus(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Running IPython")
+        print(Fore.BLUE + "Running IPython")
 
         venv_run("python src/manage.py shell_plus")
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
 def manage(command, *args, **kwargs):
     with shell_env(**env.export_env):
         with cd(env.deploy_path):
-            colors.blue("Running Django management command")
+            print(Fore.BLUE + "Running Django management command")
 
             venv_run("python src/manage.py {command}".format(command=command.strip()))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='dumpdb')
 def dump_db(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Dumping database")
+        print(Fore.BLUE + "Dumping database")
 
         now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
 
@@ -351,7 +342,7 @@ def dump_db(*args, **kwargs):
                     # dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
                     # venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
@@ -359,7 +350,7 @@ def get_media(delete=False, *args, **kwargs):
     delete = fab_arg_to_bool(delete)
 
     with cd(env.deploy_path):
-        colors.blue("Rsyncing local media with remote")
+        print(Fore.BLUE + "Rsyncing local media with remote")
 
         rsync_project(local_dir='data/',
                       remote_dir="{0}/data/media".format(env.deploy_path.rstrip("/")),
@@ -368,7 +359,7 @@ def get_media(delete=False, *args, **kwargs):
                       ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task
@@ -376,7 +367,7 @@ def get_dumps(delete=False, *args, **kwargs):
     delete = fab_arg_to_bool(delete)
 
     with cd(env.deploy_path):
-        colors.blue("Rsyncing local backups with remote")
+        print(Fore.BLUE + "Rsyncing local backups with remote")
 
         rsync_project(local_dir='data/',
                       remote_dir="{0}/data/backup".format(env.deploy_path.rstrip("/")),
@@ -385,7 +376,7 @@ def get_dumps(delete=False, *args, **kwargs):
                       ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 def _get_known_hosts_local_path():
@@ -395,7 +386,7 @@ def _get_known_hosts_local_path():
 @task
 def npm(upgrade=False, *args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Installing node_modules")
+        print(Fore.BLUE + "Installing node_modules")
 
         run("npm prune")
         run("npm set progress=false")
@@ -406,13 +397,13 @@ def npm(upgrade=False, *args, **kwargs):
 
         run("npm set progress=true")
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='cl')
 def clean(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Cleaning Django project")
+        print(Fore.BLUE + "Cleaning Django project")
 
         venv_run('python src/manage.py clearsessions')
         venv_run('python src/manage.py clear_cache')
@@ -423,7 +414,7 @@ def clean(*args, **kwargs):
         venv_run('python src/manage.py clean_pyc --optimize --path=src/')
         venv_run('python src/manage.py compile_pyc --path=src/')
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='rs')
@@ -432,7 +423,7 @@ def rebuild_staticfiles(*args, **kwargs):
         abort('Deployment cancelled')
 
     with cd(env.deploy_path):
-        colors.blue("Rebuilding staticfiles")
+        print(Fore.BLUE + "Rebuilding staticfiles")
 
         run("rm -r data/static")
 
@@ -443,18 +434,18 @@ def rebuild_staticfiles(*args, **kwargs):
 
         venv_run('python src/manage.py compress')
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='g')
 def gulp(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Starting gulp build")
+        print(Fore.BLUE + "Starting gulp build")
 
         run("gulp clean")
         run("gulp build --production")
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='cu')
@@ -466,23 +457,23 @@ def check_urls(*args, **kwargs):
         r = requests.get(url, verify=env.urls_to_check_verify_ssl_certificate)
         if r.status_code != 200: abort("HTTP status for `{0}` is `{1}`.".format(url, r.status_code))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='upt')
 def update_python_tools(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Updating Python tools")
+        print(Fore.BLUE + "Updating Python tools")
 
         venv_run('easy_install --upgrade pip')
         venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel ipython ipdb')
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='c')
 def check(*args, **kwargs):
-    colors.blue("Checking local project")
+    print(Fore.BLUE + "Checking local project")
 
     with settings(warn_only=True):
         local("git status --porcelain")
@@ -494,39 +485,39 @@ def check(*args, **kwargs):
 
     local("python src/manage.py test --noinput")
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='r')
 def restart(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Restarting application group")
+        print(Fore.BLUE + "Restarting application group")
         run('supervisorctl restart {program_name}:*'.format(program_name=env.supervisor_program))
 
     status()
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='gr')
 def graceful_restart(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Restarting Gunicorn with HUP signal")
+        print(Fore.BLUE + "Restarting Gunicorn with HUP signal")
         run('supervisorctl pid {program_name}:{part}_gunicorn | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
 
         if env.celery_enabled:
-            colors.blue("Restarting Celery with HUP signal")
+            print(Fore.BLUE + "Restarting Celery with HUP signal")
 
             run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
             run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
 
 
 @task(alias='s')
 def status(*args, **kwargs):
     with cd(env.deploy_path):
-        colors.blue("Retrieving status")
+        print(Fore.BLUE + "Retrieving status")
 
         run('supervisorctl status | grep "{program_name}"'.format(program_name=env.supervisor_program))
 
@@ -545,4 +536,4 @@ def status(*args, **kwargs):
         for service in watched_services:
             run('service {} status'.format(service))
 
-    colors.green("Done.")
+    print(Back.GREEN + "Done.")
