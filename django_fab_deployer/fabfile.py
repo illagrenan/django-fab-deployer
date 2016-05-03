@@ -13,7 +13,7 @@ from time import gmtime, strftime
 
 import environ
 import requests
-from colorama import init, Fore, Back
+from colorama import init, Fore, Back, Style
 from fabric.api import env
 from fabric.api import get
 from fabric.context_managers import cd, settings, hide, shell_env
@@ -49,10 +49,10 @@ def _print_deployment_summary(env):
     print(Fore.YELLOW + "Deployment configuration")
     print(Fore.YELLOW + "- - - - - - - - - - - - - - - - - - - -")
 
-    print('{0:<10} {1:>8}'.format("Name:", env.project_name))
-    print('{0:<10} {1:>8}'.format("Target:", env.target_name))
-    print('{0:<10} {1:>8}'.format("User:", env.user))
-    print('{0:<10} {1:>8}'.format("Host(s):", "; ".join(env.hosts)))
+    print('{0:<10} {1:<8}'.format("Name:", env.project_name))
+    print('{0:<10} {1:<8}'.format("Target:", env.target_name))
+    print('{0:<10} {1:<8}'.format("User:", env.user))
+    print('{0:<10} {1:<8}'.format("Host(s):", "; ".join(env.hosts)))
 
     print(Fore.YELLOW + "- - - - - - - - - - - - - - - - - - - -")
 
@@ -70,7 +70,8 @@ def function_builder(target, options):
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
         env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
-        env.export_env = options["export_env"] if "export_env" in options else {}
+        env_to_export = options["export_env"] if "export_env" in options else {}
+        env.export_env = env_to_export
         env.use_ssh_config = False
         env.source_branch = options.get('source_branch', DEFAULT_SOURCE_BRANCH)
         env.graceful_restart = options.get('graceful_restart', False)
@@ -127,6 +128,8 @@ def get_tasks():
                         deploy,
                         backup,
                         update_python_tools,
+                        stop,
+                        start,
                         restart,
                         graceful_restart,
                         status,
@@ -136,6 +139,7 @@ def get_tasks():
                         npm,
                         get_media,
                         rebuild_staticfiles,
+                        rebuild_virtualenv,
                         get_dumps,
                         get_database_engine,
                         dump_db,
@@ -236,22 +240,26 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
     status()
     check_urls()
 
-    total_time_msg = "Deployed :)\nTotal time: {0} seconds.".format(int(time.time() - start))
-    print(Back.GREEN + total_time_msg)
+    print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
+    print(Fore.GREEN + Style.BRIGHT + "Deployed :-)")
+    print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
+    print('{0:<10} {1:>8} seconds'.format("Total time:", int(time.time() - start)))
+    print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
 
 
 @task
 def migrate(*args, **kwargs):
-    with cd(env.deploy_path):
-        print(Fore.BLUE + "Migrating database")
+    with shell_env(**env.export_env):
+        with cd(env.deploy_path):
+            print(Fore.BLUE + "Migrating database")
 
-        venv_run('python src/manage.py migrate')
+            venv_run('python src/manage.py migrate')
 
-        if env.extra_databases:
-            for one_db in env.extra_databases:
-                venv_run('python src/manage.py migrate --database {db}'.format(db=one_db))
+            if env.extra_databases:
+                for one_db in env.extra_databases:
+                    venv_run('python src/manage.py migrate --database {db}'.format(db=one_db))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -263,7 +271,7 @@ def pull(*args, **kwargs):
         run('git checkout {0}'.format(env.source_branch))
         run('git pull --no-edit origin {0}'.format(env.source_branch))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -275,7 +283,7 @@ def pip_install(upgrade=False, *args, **kwargs):
 
         venv_run('pip install --no-input --exists-action=i --use-wheel %s -r requirements/production.txt' % ('--upgrade' if upgrade  else ''))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -289,7 +297,7 @@ def backup(*args, **kwargs):
 
         venv_run("python src/manage.py dumpdata --format json --all --indent=3 --output data/deployment_backup/%s-dump.json" % now_time)
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -299,7 +307,7 @@ def shell_plus(*args, **kwargs):
 
         venv_run("python src/manage.py shell_plus")
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -310,7 +318,7 @@ def manage(command, *args, **kwargs):
 
             venv_run("python src/manage.py {command}".format(command=command.strip()))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='dumpdb')
@@ -342,7 +350,7 @@ def dump_db(*args, **kwargs):
                     # dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
                     # venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -359,7 +367,7 @@ def get_media(delete=False, *args, **kwargs):
                       ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task
@@ -376,7 +384,7 @@ def get_dumps(delete=False, *args, **kwargs):
                       ssh_opts="-o UserKnownHostsFile={known_hosts_path}".format(known_hosts_path=_get_known_hosts_local_path()),
                       upload=False)
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 def _get_known_hosts_local_path():
@@ -397,7 +405,7 @@ def npm(upgrade=False, *args, **kwargs):
 
         run("npm set progress=true")
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='cl')
@@ -414,18 +422,18 @@ def clean(*args, **kwargs):
         venv_run('python src/manage.py clean_pyc --optimize --path=src/')
         venv_run('python src/manage.py compile_pyc --path=src/')
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='rs')
 def rebuild_staticfiles(*args, **kwargs):
     if not confirm('Are you sure you want to rebuild all staticfiles?', default=False):
-        abort('Deployment cancelled')
+        abort('Rebuild cancelled')
 
     with cd(env.deploy_path):
         print(Fore.BLUE + "Rebuilding staticfiles")
 
-        run("rm -r data/static")
+        run("rm -rf data/static")
 
         venv_run('python src/manage.py collectstatic --noinput')
         run('bower install --config.interactive=false')
@@ -434,7 +442,26 @@ def rebuild_staticfiles(*args, **kwargs):
 
         venv_run('python src/manage.py compress')
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task()
+def rebuild_virtualenv(*args, **kwargs):
+    if not confirm('Are you sure you want to rebuild virtualenv? This will stop and start your app.', default=False):
+        abort('Rebuild cancelled')
+
+    with cd(env.deploy_path):
+        stop()
+        print(Fore.BLUE + "Rebuilding virtualenv")
+
+        replace = env.venv_path.replace("/bin/activate", "")
+        run("rm -rf {}".format(replace))
+
+        run('virtualenv {}'.format(replace))
+        update_python_tools()
+        start()
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='g')
@@ -445,7 +472,7 @@ def gulp(*args, **kwargs):
         run("gulp clean")
         run("gulp build --production")
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='cu')
@@ -457,7 +484,7 @@ def check_urls(*args, **kwargs):
         r = requests.get(url, verify=env.urls_to_check_verify_ssl_certificate)
         if r.status_code != 200: abort("HTTP status for `{0}` is `{1}`.".format(url, r.status_code))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='upt')
@@ -468,7 +495,7 @@ def update_python_tools(*args, **kwargs):
         venv_run('easy_install --upgrade pip')
         venv_run('pip install --no-input --exists-action=i --use-wheel --upgrade setuptools wheel ipython ipdb')
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='c')
@@ -485,18 +512,43 @@ def check(*args, **kwargs):
 
     local("python src/manage.py test --noinput")
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task
+def supervisorctl(command, *args, **kwargs):
+    with cd(env.deploy_path):
+        run('supervisorctl {command} {program_name}:*'.format(command=command, program_name=env.supervisor_program))
 
 
 @task(alias='r')
 def restart(*args, **kwargs):
-    with cd(env.deploy_path):
-        print(Fore.BLUE + "Restarting application group")
-        run('supervisorctl restart {program_name}:*'.format(program_name=env.supervisor_program))
+    print(Fore.BLUE + "Restarting application group")
 
+    supervisorctl("restart")
     status()
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task()
+def stop(*args, **kwargs):
+    print(Fore.BLUE + "Stopping application group")
+
+    supervisorctl("stop")
+    status()
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task()
+def start(*args, **kwargs):
+    print(Fore.BLUE + "Starting application group")
+
+    supervisorctl("start")
+    status()
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='gr')
@@ -511,7 +563,7 @@ def graceful_restart(*args, **kwargs):
             run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
             run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
 
-    print(Back.GREEN + "Done.")
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
 @task(alias='s')
@@ -519,7 +571,7 @@ def status(*args, **kwargs):
     with cd(env.deploy_path):
         print(Fore.BLUE + "Retrieving status")
 
-        run('supervisorctl status | grep "{program_name}"'.format(program_name=env.supervisor_program))
+        run("supervisorctl status | grep \"{program_name}\"".format(program_name=env.supervisor_program))
 
         watched_services = [
             'nginx',
@@ -536,4 +588,4 @@ def status(*args, **kwargs):
         for service in watched_services:
             run('service {} status'.format(service))
 
-    print(Back.GREEN + "Done.")
+        print(Fore.GREEN + Style.BRIGHT + "Done.")
