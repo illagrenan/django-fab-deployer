@@ -132,6 +132,7 @@ def get_tasks():
                         start,
                         restart,
                         graceful_restart,
+                        kill,
                         status,
                         check,
                         clean,
@@ -410,17 +411,18 @@ def npm(upgrade=False, *args, **kwargs):
 
 @task(alias='cl')
 def clean(*args, **kwargs):
-    with cd(env.deploy_path):
-        print(Fore.BLUE + "Cleaning Django project")
+    with shell_env(**env.export_env):
+        with cd(env.deploy_path):
+            print(Fore.BLUE + "Cleaning Django project")
 
-        venv_run('python src/manage.py clearsessions')
-        venv_run('python src/manage.py clear_cache')
+            venv_run('python src/manage.py clearsessions')
+            venv_run('python src/manage.py clear_cache')
 
-        with settings(warn_only=True):
-            venv_run('python src/manage.py thumbnail clear')
+            with settings(warn_only=True):
+                venv_run('python src/manage.py thumbnail clear')
 
-        venv_run('python src/manage.py clean_pyc --optimize --path=src/')
-        venv_run('python src/manage.py compile_pyc --path=src/')
+            venv_run('python src/manage.py clean_pyc --optimize --path=src/')
+            venv_run('python src/manage.py compile_pyc --path=src/')
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -566,6 +568,22 @@ def graceful_restart(*args, **kwargs):
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
 
+@task()
+def kill(*args, **kwargs):
+    with cd(env.deploy_path):
+        with settings(warn_only=True):
+            print(Fore.BLUE + "Killing Gunicorn")
+            run('supervisorctl pid {program_name}:{part}_gunicorn | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
+
+            if env.celery_enabled:
+                print(Fore.BLUE + "Killing Celery")
+
+                run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
+                run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
 @task(alias='s')
 def status(*args, **kwargs):
     with cd(env.deploy_path):
@@ -584,6 +602,8 @@ def status(*args, **kwargs):
             watched_services.append('postgresql')
         elif 'mysql' in db_engine:
             watched_services.append('mysql')
+        else:
+            print("Unsupported database engine {}".format(db_engine))
 
         for service in watched_services:
             run('service {} status'.format(service))
