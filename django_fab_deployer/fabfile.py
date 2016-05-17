@@ -133,6 +133,7 @@ def get_tasks():
                         restart,
                         graceful_restart,
                         kill,
+                        kill_celery,
                         status,
                         check,
                         clean,
@@ -580,6 +581,15 @@ def kill(*args, **kwargs):
 
                 run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
                 run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task()
+def kill_celery(*args, **kwargs):
+    with cd(env.deploy_path):
+        print(Fore.BLUE + "Killing Celery")
+        run("ps auxww | grep 'celery worker' | awk '{print $2}' | xargs kill -9")
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
