@@ -8,11 +8,11 @@ import logging
 import os
 import tempfile
 import time
-from StringIO import StringIO
 from time import gmtime, strftime
 
 import environ
 import requests
+from StringIO import StringIO
 from colorama import init, Fore, Back, Style
 from fabric.api import env
 from fabric.api import get
@@ -69,6 +69,9 @@ def function_builder(target, options):
         env.db_name = options["db_name"] if "db_name" in options else env.project_name
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
+        env.clear_sessions = options.get('clear_sessions', False)
+        env.pytest = options.get('pytest', False)
+        env.compress_enabled = options.get('compress_enabled', True)
         env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
         env_to_export = options["export_env"] if "export_env" in options else {}
         env.export_env = env_to_export
@@ -230,7 +233,8 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
 
             migrate()
 
-            venv_run('python src/manage.py compress')
+            if env.compress_enabled:
+                venv_run('python src/manage.py compress')
 
             clean()
 
@@ -416,7 +420,9 @@ def clean(*args, **kwargs):
         with cd(env.deploy_path):
             print(Fore.BLUE + "Cleaning Django project")
 
-            venv_run('python src/manage.py clearsessions')
+            if env.clear_sessions:
+                venv_run('python src/manage.py clearsessions')
+
             venv_run('python src/manage.py clear_cache')
 
             with settings(warn_only=True):
@@ -513,7 +519,10 @@ def check(*args, **kwargs):
     with settings(warn_only=True):
         local("python src/manage.py validate_templates")
 
-    local("python src/manage.py test --noinput")
+    if env.pytest:
+        local("pytest src/ --verbose --color=yes --showlocals")
+    else:
+        local("python src/manage.py test --noinput")
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
