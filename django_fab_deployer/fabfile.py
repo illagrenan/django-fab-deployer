@@ -69,7 +69,7 @@ def function_builder(target, options):
         env.db_name = options["db_name"] if "db_name" in options else env.project_name
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
-        env.clear_sessions = options.get('clear_sessions', False)
+        env.clear_sessions = options.get('clear_sessions', True)
         env.pytest = options.get('pytest', False)
         env.compress_enabled = options.get('compress_enabled', True)
         env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
@@ -612,7 +612,7 @@ def status(*args, **kwargs):
 
         watched_services = [
             'nginx',
-            'supervisor',
+            'supervisor'
         ]
 
         db_engine = get_database_engine()
@@ -625,6 +625,6 @@ def status(*args, **kwargs):
             print("Unsupported database engine {}".format(db_engine))
 
         for service in watched_services:
-            run('service {} status'.format(service))
+            run('service {} status'.format(service), pty=False)
 
         print(Fore.GREEN + Style.BRIGHT + "Done.")
