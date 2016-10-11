@@ -69,7 +69,7 @@ def function_builder(target, options):
         env.db_name = options["db_name"] if "db_name" in options else env.project_name
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
-        env.clear_sessions = options.get('clear_sessions', True)
+        env.clear_cache = options.get('clear_cache', True)
         env.pytest = options.get('pytest', False)
         env.compress_enabled = options.get('compress_enabled', True)
         env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
@@ -420,10 +420,9 @@ def clean(*args, **kwargs):
         with cd(env.deploy_path):
             print(Fore.BLUE + "Cleaning Django project")
 
-            if env.clear_sessions:
+            if env.clear_cache:
                 venv_run('python src/manage.py clearsessions')
-
-            venv_run('python src/manage.py clear_cache')
+                venv_run('python src/manage.py clear_cache')
 
             with settings(warn_only=True):
                 venv_run('python src/manage.py thumbnail clear')
@@ -626,5 +625,8 @@ def status(*args, **kwargs):
 
         for service in watched_services:
             run('service {} status'.format(service), pty=False)
+
+        if env.celery_enabled:
+            venv_run("celery --workdir=src/ --app=main status")
 
         print(Fore.GREEN + Style.BRIGHT + "Done.")
