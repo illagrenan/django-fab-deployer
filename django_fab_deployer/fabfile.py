@@ -6,20 +6,25 @@ from __future__ import (absolute_import, division, print_function, unicode_liter
 import json
 import logging
 import os
+import sys
 import tempfile
 import time
 from time import gmtime, strftime
 
 import environ
 import requests
-from StringIO import StringIO
+
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 from colorama import init, Fore, Back, Style
 from fabric.api import env
 from fabric.api import get
-from fabric.context_managers import cd, settings, hide, shell_env
+from fabric.context_managers import cd, settings, hide, shell_env, lcd
 from fabric.contrib.console import confirm
 from fabric.contrib.project import rsync_project
-from fabric.decorators import task
+from fabric.decorators import task, runs_once
 from fabric.network import needs_host
 from fabric.operations import os, run, local
 from fabric.utils import abort
@@ -69,7 +74,20 @@ def function_builder(target, options):
         env.db_name = options["db_name"] if "db_name" in options else env.project_name
         env.venv_path = options["venv_path"]
         env.celery_enabled = options.get('celery_enabled', False)
+        env.celery_workers = options.get('celery_workers', [])
+        env.huey_enabled = options.get('huey_enabled', False)
+        env.opbeat_enabled = options.get('opbeat_enabled', False)
+
+        if env.opbeat_enabled:
+            env.opbeat_authorization_bearer = options.get('opbeat_authorization_bearer')
+            env.opbeat_organization_id = options.get('opbeat_organization_id')
+            env.opbeat_app_id = options.get('opbeat_app_id')
+
+        env.yarn_enabled = options.get('yarn_enabled', False)
+        env.celerybeat_enabled = options.get('celerybeat_enabled', False)
         env.clear_cache = options.get('clear_cache', True)
+        env.backup_db = options.get('backup_db', True)
+        env.db_engine = options.get('db_engine', 'postgresql')
         env.pytest = options.get('pytest', False)
         env.compress_enabled = options.get('compress_enabled', True)
         env.extra_databases = options["extra_databases"] if "extra_databases" in options else []
@@ -146,13 +164,14 @@ def get_tasks():
                         rebuild_staticfiles,
                         rebuild_virtualenv,
                         get_dumps,
-                        get_database_engine,
                         dump_db,
+                        drop_schema,
                         shell_plus,
                         migrate,
                         manage,
                         pull,
                         pip_install,
+                        register_deployment,
                         gulp]:
         yield fabric_task.__name__, fabric_task
 
@@ -166,32 +185,9 @@ def venv_run(command_to_run):
 
 @task
 @needs_host
-def get_database_engine(*args, **kwargs):
-    # TODO Use manage.py sqldsn
-    fd = StringIO()
-
-    with hide('output', 'running'):
-        with cd(env.deploy_path):
-            get('.env', fd)
-            content = fd.getvalue()
-
-    dj_env = environ.Env()
-
-    with tempfile.NamedTemporaryFile(delete=False) as temp:
-        temp.write(content)
-        temp.flush()
-        dj_env.read_env(temp.name)
-        en = dj_env.db()['ENGINE']
-
-    os.remove(temp.name)
-    return en
-
-
-@task
-@needs_host
 def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
     with shell_env(**env.export_env):
-        start = time.time()
+        start_ = time.time()
 
         print(Back.GREEN + 'Deployment started')
 
@@ -205,17 +201,20 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
             print(Fore.YELLOW + "CHECK skipped!")
 
         with cd(env.deploy_path):
-            # Create backup
-            dump_db()
+            if env.backup_db:
+                dump_db()
+            else:
+                print(Fore.YELLOW + "Database was not backed up!")
 
-            # Source code
             pull()
 
-            if not skip_npm:
-                # Dependencies
-                npm(upgrade)
+            if env.yarn_enabled:
+                yarn()
             else:
-                print(Fore.YELLOW + "NPM skipped!")
+                if not skip_npm:
+                    npm(upgrade=upgrade)
+                else:
+                    print(Fore.YELLOW + "NPM skipped!")
 
             # Dependencies
             print(Fore.BLUE + "Installing bower dependencies")
@@ -238,7 +237,9 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
 
             clean()
 
-            venv_run('python src/manage.py compilemessages')
+            # with cd('src/'):
+            venv_run('cd src && python manage.py compilemessages')
+
             venv_run("python src/manage.py check --deploy")
 
         graceful_restart() if env.graceful_restart else restart()
@@ -246,10 +247,13 @@ def deploy(upgrade=False, skip_npm=False, skip_check=False, *args, **kwargs):
     status()
     check_urls()
 
+    if env.opbeat_enabled:
+        register_deployment()
+
     print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
     print(Fore.GREEN + Style.BRIGHT + "Deployed :-)")
     print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
-    print('{0:<10} {1:>8} seconds'.format("Total time:", int(time.time() - start)))
+    print('{0:<10} {1:>8} seconds'.format("Total time:", int(time.time() - start_)))
     print(Fore.GREEN + "- - - - - - - - - - - - - - - - - - - -")
 
 
@@ -259,11 +263,11 @@ def migrate(*args, **kwargs):
         with cd(env.deploy_path):
             print(Fore.BLUE + "Migrating database")
 
-            venv_run('python src/manage.py migrate')
+            venv_run('python src/manage.py migrate --noinput')
 
             if env.extra_databases:
                 for one_db in env.extra_databases:
-                    venv_run('python src/manage.py migrate --database {db}'.format(db=one_db))
+                    venv_run('python src/manage.py migrate --noinput --database {db}'.format(db=one_db))
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -276,6 +280,7 @@ def pull(*args, **kwargs):
         run('git reset --hard')
         run('git checkout {0}'.format(env.source_branch))
         run('git pull --no-edit origin {0}'.format(env.source_branch))
+        run('git submodule update --quiet --recursive')
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -287,7 +292,7 @@ def pip_install(upgrade=False, *args, **kwargs):
     with cd(env.deploy_path):
         print(Fore.BLUE + "Installing pip dependencies")
 
-        venv_run('pip install --no-input --exists-action=i --use-wheel %s -r requirements/production.txt' % ('--upgrade' if upgrade  else ''))
+        venv_run('pip install --no-input --compile --exists-action=i --use-wheel %s -r requirements/production.txt' % ('--upgrade' if upgrade  else ''))
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -328,35 +333,86 @@ def manage(command, *args, **kwargs):
 
 
 @task(alias='dumpdb')
-def dump_db(*args, **kwargs):
+def dump_db(out_format='custom', *args, **kwargs):
     with cd(env.deploy_path):
         print(Fore.BLUE + "Dumping database")
 
         now_time = strftime("%Y-%m-%d_%H.%M.%S", gmtime())
 
         with settings(abort_exception=FabricException):
-            if 'postgresql' in get_database_engine():
-                try:
-                    run("pg_dump --dbname={db_name} --no-owner -f data/backup/{project_name}_{now_time}.sql".format(db_name=env.db_name, project_name=env.project_name, now_time=now_time))
-                except FabricException:
-                    print("Hint: create configuration file with nano ~/.pgpass")
-                    print("# hostname:port:database:username:password" + os.linesep +
-                          "*:*:{0}:{0}:xxx".format(env.project_name))
+            if env.db_engine == 'postgresql':
+                dump_postgres(env, now_time, out_format)
+            elif env.db_engine == 'mysql':
+                dump_mysql(env, now_time)
             else:
-                try:
-                    run("mysqldump --databases {0} > data/backup/{0}_{1}.sql".format(env.project_name, now_time))
-                except FabricException:
-                    print("Hint: create configuration file with nano ~/.my.cnf")
-                    print("[client]" + os.linesep +
-                          "user = {}".format(env.project_name) + os.linesep +
-                          "password = xxx" +
-                          os.linesep +
-                          "host = 127.0.0.1")
-
-                    # dbdump_extra_option = '--pgpass' if 'postgresql' in get_database_engine() else ''
-                    # venv_run('python src/manage.py dbdump --destination=data/backup %s' % dbdump_extra_option)
+                print('Unsupported DB engine')
+                sys.exit(1)
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task(alias='drop')
+def drop_schema(*args, **kwargs):
+    with settings(user='root'):
+        if not confirm('This will DESTROY database schmema on the server!', default=False):
+            abort('Drop cancelled.')
+
+        with cd(env.deploy_path):
+            print(Fore.RED + "Dropping database schema")
+
+            run('whoami')
+            run("sudo -u postgres psql --dbname={db_name} "
+                "-c \"DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres; GRANT ALL ON SCHEMA public TO public;\"".format(db_name=env.db_name))
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+def dump_mysql(env, now_time):
+    try:
+        run("mysqldump --databases {0} > data/backup/{0}_{1}.sql".format(env.project_name, now_time))
+    except FabricException:
+        print("Hint: create configuration file with nano ~/.my.cnf")
+        print("[client]" + os.linesep +
+              "user = {}".format(env.project_name) + os.linesep +
+              "password = xxx" +
+              os.linesep +
+              "host = 127.0.0.1")
+
+
+def dump_postgres(env, now_time, out_format):
+    try:
+        extension = 'sql' if out_format == 'plain' else 'backup'
+        dump_filename = "{project_name}_{now_time}.{extension}".format(project_name=env.project_name, now_time=now_time, extension=extension)
+
+        # User `--inserts` to user INSERT INTO rather than COPY
+        run("pg_dump "
+            "--format={out_format} "  # plain || custom
+            "--dbname={db_name} "
+            "--encoding=utf8 "
+            "--verbose "
+            "--schema=public "
+            "--clean "  # Drop all DB objects; only applied when out_format == plain
+            "-f data/backup/{dump_filename}".format(out_format=out_format, db_name=env.db_name, dump_filename=dump_filename))
+
+        if out_format == 'custom':
+            print(Fore.GREEN + Style.BRIGHT + "Restore me with: `pg_restore {dump_filename} "
+                                              "--clean "
+                                              "--exit-on-error "
+                                              "--format={out_format} "
+                                              "--jobs=2 "
+                                              "--verbose "
+                                              "-n public "  # Restore only public schema
+                                              "--dbname={db_name} "
+                                              "[--data-only][--schema-only]`".format(out_format=out_format, dump_filename=dump_filename, db_name=env.db_name))
+        else:
+            print(Fore.GREEN + Style.BRIGHT + "Restore me with: `psql --file={dump_filename} "
+                                              "--dbname={db_name}`".format(out_format=out_format, dump_filename=dump_filename, db_name=env.db_name))
+
+    except FabricException:
+        print("Hint: create configuration file with nano ~/.pgpass")
+        print("# hostname:port:database:username:password" + os.linesep +
+              "*:*:{0}:{0}:xxx".format(env.project_name))
+        sys.exit(1)
 
 
 @task
@@ -402,7 +458,7 @@ def npm(upgrade=False, *args, **kwargs):
     with cd(env.deploy_path):
         print(Fore.BLUE + "Installing node_modules")
 
-        run("npm prune")
+        # run("npm prune")
         run("npm set progress=false")
         run("npm install --no-optional")
 
@@ -410,6 +466,15 @@ def npm(upgrade=False, *args, **kwargs):
             run("npm update --no-optional")
 
         run("npm set progress=true")
+
+    print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task
+def yarn(upgrade=False, *args, **kwargs):
+    with cd(env.deploy_path):
+        print(Fore.BLUE + "Installing node_modules using yarn")
+        run("yarn install")
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -571,8 +636,19 @@ def graceful_restart(*args, **kwargs):
         if env.celery_enabled:
             print(Fore.BLUE + "Restarting Celery with HUP signal")
 
-            run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
-            run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
+            if env.celery_workers:
+                for worker in env.celery_workers:
+                    print(Fore.YELLOW + "Restarting worker `{}`".format(worker))
+                    run('supervisorctl pid {program_name}:{part}_celeryd_{worker} | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name, worker=worker))
+            else:
+                print(Fore.YELLOW + "Restarting default worker")
+                run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
+
+            if env.celerybeat_enabled:
+                run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -s HUP'.format(program_name=env.supervisor_program, part=env.project_name))
+
+        if env.huey_enabled:
+            run('supervisorctl restart {program_name}:{part}_huey'.format(program_name=env.supervisor_program, part=env.project_name))
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -587,8 +663,14 @@ def kill(*args, **kwargs):
             if env.celery_enabled:
                 print(Fore.BLUE + "Killing Celery")
 
-                run('supervisorctl pid {program_name}:{part}_celeryd | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
-                run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
+                if env.celery_workers:
+                    for worker in env.celery_workers:
+                        print(Fore.YELLOW + "Killing worker `{}`".format(worker))
+
+                        run('supervisorctl pid {program_name}:{part}_celeryd_{worker} | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name, worker=worker))
+                else:
+                    print(Fore.YELLOW + "Killing default worker")
+                    run('supervisorctl pid {program_name}:{part}_celerybeat | xargs kill -9'.format(program_name=env.supervisor_program, part=env.project_name))
 
     print(Fore.GREEN + Style.BRIGHT + "Done.")
 
@@ -614,19 +696,35 @@ def status(*args, **kwargs):
             'supervisor'
         ]
 
-        db_engine = get_database_engine()
-
-        if 'postgresql' in db_engine:
+        if env.db_engine == 'postgresql':
             watched_services.append('postgresql')
-        elif 'mysql' in db_engine:
+        elif env.db_engine == 'mysql':
             watched_services.append('mysql')
         else:
-            print("Unsupported database engine {}".format(db_engine))
+            print("Unsupported database engine {}".format(env.db_engine))
 
         for service in watched_services:
             run('service {} status'.format(service), pty=False)
 
         if env.celery_enabled:
-            venv_run("celery --workdir=src/ --app=main status")
+            with settings(warn_only=True):
+                venv_run("celery --workdir=src/ --app=main status")
 
         print(Fore.GREEN + Style.BRIGHT + "Done.")
+
+
+@task
+@runs_once
+def register_deployment(git_path="."):
+    with(lcd(git_path)):
+        revision = local('git log -n 1 --pretty="format:%H"', capture=True)
+        branch = local('git rev-parse --abbrev-ref HEAD', capture=True)
+        local('curl https://intake.opbeat.com/api/v1/organizations/{opbeat_organization_id}/apps/{opbeat_app_id}/releases/'
+              ' -H "Authorization: Bearer {opbeat_authorization_bearer}"'
+              ' -d rev="{rev}"'
+              ' -d branch="{branch}"'
+              ' -d status=completed'.format(opbeat_organization_id=env.opbeat_organization_id,
+                                            opbeat_app_id=env.opbeat_app_id,
+                                            opbeat_authorization_bearer=env.opbeat_authorization_bearer,
+                                            rev=revision,
+                                            branch=branch))

@@ -3,11 +3,12 @@
 
 from __future__ import (absolute_import, division, print_function, unicode_literals)
 
+import six
 import os
 
 
 def fab_arg_to_bool(val):
-    if isinstance(val, basestring):
+    if isinstance(val, six.string_types):
         return val.lower() == 'true'
 
     return False
